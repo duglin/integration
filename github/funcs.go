@@ -60,7 +60,7 @@ func Git(method string, url string, body string) (*GitResponse, error) {
 	if res.StatusCode/100 != 2 {
 		// fmt.Printf("Git Error:\n--> %s %s\n--> %s\n", method, url, body)
 		// fmt.Printf("%d %s\n", res.StatusCode, string(buf))
-		return nil,
+		return &gitResponse,
 			fmt.Errorf("Github: Error %s: %d %s\n", url, res.StatusCode,
 				string(buf))
 	}
@@ -198,9 +198,9 @@ func (org *Organization) IsMember(user string) (bool, error) {
 	if len(user) > 1 && user[0] == '@' {
 		user = user[1:]
 	}
-	_, err := Git("GET", org.URL+"/public_members/"+user, "")
+	res, err := Git("GET", org.URL+"/public_members/"+user, "")
 	if err != nil {
-		if strings.Index(err.Error(), " 404 ") > 0 {
+		if res != nil && res.StatusCode == 404 {
 			return false, nil
 		}
 		return false, err
