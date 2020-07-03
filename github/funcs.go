@@ -2,43 +2,136 @@ package github
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha1"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"reflect"
 	"strings"
 )
 
-var GitToken = ""
+var GitHubToken = ""
 var GitHubURL = ""
+var GitHubSecret = "" // used to verify events are from github
 
-func Git(method string, url string, body string) (string, error) {
+type GitResponse struct {
+	StatusCode int
+	Links      map[string]string
+	Body       string
+}
+
+func Git(method string, url string, body string) (*GitResponse, error) {
+	gitResponse := GitResponse{
+		Links: map[string]string{},
+	}
+
 	buf := []byte{}
 	if body != "" {
 		buf = []byte(body)
 	}
 	req, err := http.NewRequest(method, url, bytes.NewReader(buf))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	auth := base64.StdEncoding.EncodeToString([]byte("dug:" + GitToken))
+	auth := base64.StdEncoding.EncodeToString([]byte("dug:" + GitHubToken))
 	req.Header.Add("Authorization", "Basic "+auth)
 	req.Header.Add("Content-Type", "application/json")
 
+	if strings.Contains(url, "projects") || strings.Contains(url, "cards") ||
+		strings.Contains(url, "columns") {
+		req.Header.Add("Accept", "application/vnd.github.inertia-preview+json")
+	}
+
 	res, err := (&http.Client{}).Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer res.Body.Close()
 	buf, _ = ioutil.ReadAll(res.Body)
+
+	gitResponse.StatusCode = res.StatusCode
+	gitResponse.Body = string(buf)
+
 	if res.StatusCode/100 != 2 {
 		// fmt.Printf("Git Error:\n--> %s %s\n--> %s\n", method, url, body)
 		// fmt.Printf("%d %s\n", res.StatusCode, string(buf))
-		return "", fmt.Errorf("Error gitting: %d %s\n", res.StatusCode, string(buf))
+		return nil,
+			fmt.Errorf("Github: Error %s: %d %s\n", url, res.StatusCode,
+				string(buf))
 	}
-	return string(buf), nil
+
+	// Link: <https://.../issues?page=2>; rel="next",
+	//   <https://issues?page=2>; rel="last"
+	if links := res.Header["Link"]; len(links) > 0 {
+		links = strings.Split(links[0], ",")
+		for _, link := range links {
+			parts := strings.Split(link, ";")
+			for i, part := range parts {
+				parts[i] = strings.TrimSpace(part)
+			}
+			if len(parts) == 2 && strings.HasPrefix(parts[1], `rel="`) {
+				key := parts[1][5 : len(parts[1])-1]
+				val := parts[0][1 : len(parts[0])-1] // trim <>
+				gitResponse.Links[key] = val
+			}
+		}
+	}
+
+	return &gitResponse, nil
+}
+
+// daItem is an empty slice of the resource type to return (e.g. []*Issue{})
+func GetAll(url string, daItem interface{}) (interface{}, error) {
+	daType := reflect.TypeOf(daItem)
+	result := reflect.MakeSlice(daType, 0, 0)
+
+	for url != "" {
+		var res *GitResponse
+		var err error
+		if res, err = Git("GET", url, ""); err != nil {
+			return nil, err
+		}
+
+		// Create a pointer Value to a slice, JSON Unmarshal needs a ptr
+		itemsPtr := reflect.New(daType)
+
+		// Create an empty slice Value and make our pointer reference it
+		itemsPtr.Elem().Set(reflect.MakeSlice(daType, 0, 0))
+
+		err = json.Unmarshal([]byte(res.Body), itemsPtr.Interface())
+		if err != nil {
+			return nil, err
+		}
+
+		// Re-get the pointer Value of the slice since it may have moved,
+		// then append it to the result set
+		result = reflect.AppendSlice(result, itemsPtr.Elem())
+
+		url = res.Links["next"]
+	}
+
+	return result.Interface(), nil
+}
+
+func VerifyEvent(req *http.Request, body []byte) bool {
+	sig := req.Header.Get("X-HUB-SIGNATURE")
+
+	if len(sig) != 45 || !strings.HasPrefix(sig, "sha1=") {
+		return false
+	}
+
+	calc := make([]byte, 20)
+	hex.Decode(calc, []byte(sig[5:]))
+
+	mac := hmac.New(sha1.New, []byte(GitHubSecret))
+	mac.Write(body)
+
+	return hmac.Equal(calc, mac.Sum(nil))
 }
 
 func Body(str string) string {
@@ -115,6 +208,14 @@ func (org *Organization) IsMember(user string) (bool, error) {
 	return true, nil
 }
 
+func (repo *Repository) GetLabels() ([]*Label, error) {
+	items, err := GetAll(repo.URL+"/labels", []*Label{})
+	if err != nil {
+		return nil, err
+	}
+	return items.([]*Label), nil
+}
+
 // Static methods
 
 func GetRepository(org string, name string) (*Repository, error) {
@@ -124,7 +225,7 @@ func GetRepository(org string, name string) (*Repository, error) {
 	}
 
 	repo := Repository{}
-	if err = json.Unmarshal([]byte(res), &repo); err != nil {
+	if err = json.Unmarshal([]byte(res.Body), &repo); err != nil {
 		return nil, err
 	}
 
@@ -140,7 +241,7 @@ func GetIssue(org string, repo string, num int) (*Issue, error) {
 	}
 
 	issue := Issue{}
-	if err = json.Unmarshal([]byte(res), &issue); err != nil {
+	if err = json.Unmarshal([]byte(res.Body), &issue); err != nil {
 		return nil, err
 	}
 
@@ -154,7 +255,7 @@ func GetRepositoryTeams(org string, repo string) ([]Team, error) {
 	}
 
 	var teams []Team
-	if err = json.Unmarshal([]byte(res), &teams); err != nil {
+	if err = json.Unmarshal([]byte(res.Body), &teams); err != nil {
 		return nil, err
 	}
 
