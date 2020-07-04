@@ -232,6 +232,40 @@ func GetRepository(org string, name string) (*Repository, error) {
 	return &repo, nil
 }
 
+func SetIssueMilestone(org string, repo string, num int, newMile string) (*Issue, error) {
+	items, err := GetAll(GitHubURL+"/repos/"+org+"/"+repo+"/milestones",
+		[]*Milestone{})
+	if err != nil {
+		return nil, err
+	}
+	milestones := items.([]*Milestone)
+
+	mileNum := -1
+	for _, mile := range milestones {
+		if mile.Title == newMile {
+			mileNum = mile.Number
+		}
+	}
+	if mileNum == -1 {
+		err = fmt.Errorf("Can't find milestone %q\n", newMile)
+		fmt.Printf("Error setting milestone: %s\n", err)
+		return nil, err
+	}
+
+	url := fmt.Sprintf("%s/repos/%s/%s/issues/%d", GitHubURL, org, repo, num)
+	res, err := Git("PATCH", url, fmt.Sprintf(`{"milestone": %s}`, mileNum))
+	if err != nil {
+		return nil, err
+	}
+
+	issue := Issue{}
+	if err = json.Unmarshal([]byte(res.Body), &issue); err != nil {
+		return nil, err
+	}
+
+	return &issue, nil
+}
+
 // /repos/:owner/:repo/issues/:issue_number
 func GetIssue(org string, repo string, num int) (*Issue, error) {
 	url := fmt.Sprintf("%s/repos/%s/%s/issues/%d", GitHubURL, org, repo, num)
@@ -248,18 +282,12 @@ func GetIssue(org string, repo string, num int) (*Issue, error) {
 	return &issue, nil
 }
 
-func GetRepositoryTeams(org string, repo string) ([]Team, error) {
-	res, err := Git("GET", GitHubURL+"/repos/"+org+"/"+repo+"/teams", "")
+func GetRepositoryTeams(org string, repo string) ([]*Team, error) {
+	items, err := GetAll(GitHubURL+"/repos/"+org+"/"+repo+"/teams", []*Label{})
 	if err != nil {
 		return nil, err
 	}
-
-	var teams []Team
-	if err = json.Unmarshal([]byte(res.Body), &teams); err != nil {
-		return nil, err
-	}
-
-	return teams, nil
+	return items.([]*Team), nil
 }
 
 func IsUserInOrganization(org string, user string) (bool, error) {
