@@ -194,6 +194,19 @@ func (issue *Issue) RemoveAssignee(user string) error {
 	return err
 }
 
+func (issue *Issue) SetMilestone(newMile string) error {
+	var err error
+
+	if newMile == "" {
+		_, err = Git("PATCH", issue.URL, `{"milestone": null}`)
+	} else {
+		_, err = Git("PATCH", issue.URL,
+			fmt.Sprintf(`{"milestone": "%s"}`, newMile))
+	}
+
+	return err
+}
+
 func (org *Organization) IsMember(user string) (bool, error) {
 	if len(user) > 1 && user[0] == '@' {
 		user = user[1:]
@@ -253,7 +266,7 @@ func SetIssueMilestone(org string, repo string, num int, newMile string) (*Issue
 	}
 
 	url := fmt.Sprintf("%s/repos/%s/%s/issues/%d", GitHubURL, org, repo, num)
-	res, err := Git("PATCH", url, fmt.Sprintf(`{"milestone": %s}`, mileNum))
+	res, err := Git("PATCH", url, fmt.Sprintf(`{"milestone": "%s"}`, mileNum))
 	if err != nil {
 		return nil, err
 	}
@@ -266,9 +279,17 @@ func SetIssueMilestone(org string, repo string, num int, newMile string) (*Issue
 	return &issue, nil
 }
 
+func GetRepositoryMilestones(org string, repo string) ([]*Milestone, error) {
+	items, err := GetAll(GitHubURL+"/repos/"+org+"/"+repo+"/milestones",
+		[]*Milestone{})
+	if err != nil {
+		return nil, err
+	}
+	return items.([]*Milestone), nil
+}
+
 // /repos/:owner/:repo/issues/:issue_number
-func GetIssue(org string, repo string, num int) (*Issue, error) {
-	url := fmt.Sprintf("%s/repos/%s/%s/issues/%d", GitHubURL, org, repo, num)
+func GetIssue(url string) (*Issue, error) {
 	res, err := Git("GET", url, "")
 	if err != nil {
 		return nil, err
@@ -280,6 +301,11 @@ func GetIssue(org string, repo string, num int) (*Issue, error) {
 	}
 
 	return &issue, nil
+}
+
+func GetIssueParts(org string, repo string, num int) (*Issue, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s/issues/%d", GitHubURL, org, repo, num)
+	return GetIssue(url)
 }
 
 func GetRepositoryTeams(org string, repo string) ([]*Team, error) {

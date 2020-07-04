@@ -41,7 +41,7 @@ type Milestone struct {
 	State         string
 	Title         string
 	Description   string
-	Creator       User
+	Creator       *User
 	Open_Issues   int
 	Closed_Issues int
 	Created_At    string
@@ -63,11 +63,11 @@ type Issue struct {
 	State              string
 	Title              string
 	Body               string
-	User               User
-	Labels             []Label
-	Assignee           User
-	Assignees          []User
-	Milestone          Milestone
+	User               *User
+	Labels             []*Label
+	Assignee           *User
+	Assignees          []*User
+	Milestone          *Milestone
 	Locked             bool
 	Active_Lock_Reason string
 	Comments           int
@@ -79,7 +79,7 @@ type Issue struct {
 	}
 	Closed_At  string
 	Updated_At string
-	Closed_By  User
+	Closed_By  *User
 }
 
 type Comment struct {
@@ -88,7 +88,7 @@ type Comment struct {
 	Issue_URL          string
 	ID                 int
 	Node_ID            string
-	User               User
+	User               *User
 	Created_At         string
 	Updated_At         string
 	Author_Association string
@@ -101,7 +101,7 @@ type Repository struct {
 	Name              string
 	Full_Name         string
 	Private           bool
-	Owner             User
+	Owner             *User
 	HTML_URL          string
 	Description       string
 	Fork              bool
@@ -221,10 +221,10 @@ type Issue_Comment struct {
 			From string
 		}
 	}
-	Issue        Issue
-	Comment      Comment
-	Repository   Repository
-	Organization Organization
-	Enterprise   Enterprise
-	Sender       User
+	Issue        *Issue
+	Comment      *Comment
+	Repository   *Repository
+	Organization *Organization
+	Enterprise   *Enterprise
+	Sender       *User
 }
