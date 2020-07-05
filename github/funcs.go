@@ -154,6 +154,15 @@ func (issue *Issue) RemoveLabel(label string) error {
 	return err
 }
 
+func (issue *Issue) HasLabel(label string) bool {
+	for _, l := range issue.Labels {
+		if strings.EqualFold(l.Name, label) {
+			return true
+		}
+	}
+	return false
+}
+
 func (issue *Issue) AddComment(comment string) error {
 	_, err := Git("POST", issue.URL+"/comments", Body(comment))
 	return err

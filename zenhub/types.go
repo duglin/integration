@@ -24,17 +24,19 @@ type Workspace struct {
 	Repositories []int  `json:"repositories"`
 }
 
+type PipelineIssue struct {
+	Issue_Number int `json:"issue_number"`
+	Estimate     struct {
+		Value int `json:"value"`
+	} `json:"estimate"`
+	Position int  `json:"position"`
+	Is_Epic  bool `json:"is_epic"`
+}
+
 type Pipeline struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Issues []struct {
-		Issue_Number int `json:"issue_number"`
-		Estimate     struct {
-			Value int `json:"value"`
-		} `json:"estimate"`
-		Position int  `json:"position"`
-		Is_Epic  bool `json:"is_epic"`
-	} `json:"issues"`
+	ID     string           `json:"id"`
+	Name   string           `json:"name"`
+	Issues []*PipelineIssue `json:"issues"`
 }
 
 // GET /p2/workspaces/:workspace_id/repositories/:repo_id/board -> Board
