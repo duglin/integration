@@ -76,6 +76,21 @@ func SetIssuePipeline(workspaceID string, repoID int, issueNum int, pipelineID s
 	return err
 }
 
+func SetIssuePipeline2(repoID int, workspace string, issueNum int, pipeline string) error {
+	board, err := GetBoard(repoID, workspace)
+	if err != nil {
+		return err
+	}
+
+	for _, p := range board.Pipelines {
+		if p.Name == pipeline {
+			return SetIssuePipeline(board.Workspace.ID, repoID, issueNum, p.ID)
+		}
+	}
+
+	return fmt.Errorf("Can't find pipeline %q", pipeline)
+}
+
 func GetWorkspaces(repoID int) ([]*Workspace, error) {
 	url := fmt.Sprintf("%s/p2/repositories/%d/workspaces", ZenHubURL, repoID)
 	res, err := Zen("GET", url, "")
