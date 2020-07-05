@@ -214,17 +214,36 @@ type Team struct {
 	Parent           string
 }
 
-type Issue_Comment struct {
-	Action  string
+type Event_Issue_Comment struct {
+	Action       string
+	Sender       *User
+	Repository   *Repository
+	Organization *Organization
+
 	Changes struct { // only for "edited" actions
 		Body struct {
 			From string
 		}
 	}
-	Issue        *Issue
-	Comment      *Comment
+	Issue   *Issue
+	Comment *Comment
+}
+
+type Event_Issues struct {
+	Action       string
+	Sender       *User
 	Repository   *Repository
 	Organization *Organization
-	Enterprise   *Enterprise
-	Sender       *User
+
+	Changes struct { // only for "edited" actions
+		Title struct {
+			From string
+		}
+		Body struct {
+			From string
+		}
+	}
+	Issue    *Issue
+	Label    *Label
+	Assignee *User
 }

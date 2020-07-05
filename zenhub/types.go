@@ -1,7 +1,7 @@
 package zenhub
 
-// GET /p1/repositories/:repo_id/issues/:issue_number -> zenIssue
-type ZenIssue struct {
+// GET /p1/repositories/:repo_id/issues/:issue_number -> Issue
+type Issue struct {
 	Estimate struct {
 		Value int `json:"value"`
 	} `json:"estimate"`
@@ -16,32 +16,36 @@ type ZenIssue struct {
 	Is_Epic bool `json:"is_epic"`
 }
 
-// GET /p2/repositories/:repo_id/workspaces -> []ZenWorkspace
-type ZenWorkspace struct {
+// GET /p2/repositories/:repo_id/workspaces -> []Workspace
+type Workspace struct {
 	Name         string `json:"name"`
 	Description  string `json:"description"`
 	ID           string `json:"id"`
 	Repositories []int  `json:"repositories"`
 }
 
-// GET /p2/workspaces/:workspace_id/repositories/:repo_id/board -> ZenBoard
-type ZenBoard struct {
-	Pipelines []struct {
-		ID     string `json:"id"`
-		Name   string `json:"name"`
-		Issues []struct {
-			Issue_Number int `json:"issue_number"`
-			Estimate     struct {
-				Value int `json:"value"`
-			} `json:"estimate"`
-			Position int  `json:"position"`
-			Is_Epic  bool `json:"is_epic"`
-		} `json:"issues"`
-	} `json:"pipelines"`
+type Pipeline struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Issues []struct {
+		Issue_Number int `json:"issue_number"`
+		Estimate     struct {
+			Value int `json:"value"`
+		} `json:"estimate"`
+		Position int  `json:"position"`
+		Is_Epic  bool `json:"is_epic"`
+	} `json:"issues"`
 }
 
-// GET /p1/repositories/:repo_id/epics  -> []zenEpic
-type ZenRepositoryEpics struct {
+// GET /p2/workspaces/:workspace_id/repositories/:repo_id/board -> Board
+type Board struct {
+	Workspace *Workspace
+	RepoID    int
+	Pipelines []*Pipeline `json:"pipelines"`
+}
+
+// GET /p1/repositories/:repo_id/epics  -> []Epic
+type RepositoryEpics struct {
 	Epic_Issues []struct {
 		Issue_Number int    `json:"issue_number"`
 		Repo_ID      int    `json:"repo_id"`
@@ -49,6 +53,6 @@ type ZenRepositoryEpics struct {
 	} `json:"epic_issues"`
 }
 
-// GET /p1/repositories/:repo_id/epics/:epic_id  -> zenEpic
-type ZenEpic struct {
+// GET /p1/repositories/:repo_id/epics/:epic_id  -> Epic
+type Epic struct {
 }
