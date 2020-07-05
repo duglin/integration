@@ -196,8 +196,18 @@ func (issue *Issue) RemoveAssignee(user string) error {
 
 func (issue *Issue) SetMilestone(newMile string) error {
 	if newMile == "" {
+		// Already done
+		if issue.Milestone == nil {
+			return nil
+		}
+
 		_, err := Git("PATCH", issue.URL, `{"milestone": null}`)
 		return err
+	}
+
+	// Already done
+	if issue.Milestone != nil && issue.Milestone.Title == newMile {
+		return nil
 	}
 
 	items, err := GetAll(issue.Repository_URL+"/milestones", []*Milestone{})
