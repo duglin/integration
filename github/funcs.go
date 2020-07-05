@@ -214,7 +214,6 @@ func (issue *Issue) SetMilestone(newMile string) error {
 	}
 	if mileNum == -1 {
 		err = fmt.Errorf("Can't find milestone %q\n", newMile)
-		fmt.Printf("Error setting milestone: %s\n", err)
 		return err
 	}
 
@@ -277,7 +276,6 @@ func SetIssueMilestone(org string, repo string, num int, newMile string) (*Issue
 	}
 	if mileNum == -1 {
 		err = fmt.Errorf("Can't find milestone %q\n", newMile)
-		fmt.Printf("Error setting milestone: %s\n", err)
 		return nil, err
 	}
 
