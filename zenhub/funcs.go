@@ -156,6 +156,20 @@ func GetBoard(repoID int, workspace string) (*Board, error) {
 	return b, nil
 }
 
+func GetPipeline(repoID int, workspace string, pipeline string) (*Pipeline, error) {
+	board, err := GetBoard(repoID, workspace)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, p := range board.Pipelines {
+		if p.Name == pipeline {
+			return p, nil
+		}
+	}
+	return nil, nil
+}
+
 func AddTask(epicRepoID int, epicNum int, taskRepoID int, taskNum int) error {
 	url := fmt.Sprintf("%s/p1/repositories/%d/epics/%d/update_issues",
 		ZenHubURL, epicRepoID, epicNum)
