@@ -61,8 +61,8 @@ func Git(method string, url string, body string) (*GitResponse, error) {
 		// fmt.Printf("Git Error:\n--> %s %s\n--> %s\n", method, url, body)
 		// fmt.Printf("%d %s\n", res.StatusCode, string(buf))
 		return &gitResponse,
-			fmt.Errorf("Github: Error %s: %d %s\n", url, res.StatusCode,
-				string(buf))
+			fmt.Errorf("Github: Error %s: %d %s\nReq Body: %s\n", url,
+				res.StatusCode, string(buf), body)
 	}
 
 	// Link: <https://.../issues?page=2>; rel="next",
@@ -195,14 +195,30 @@ func (issue *Issue) RemoveAssignee(user string) error {
 }
 
 func (issue *Issue) SetMilestone(newMile string) error {
-	var err error
-
 	if newMile == "" {
-		_, err = Git("PATCH", issue.URL, `{"milestone": null}`)
-	} else {
-		_, err = Git("PATCH", issue.URL,
-			fmt.Sprintf(`{"milestone": "%s"}`, newMile))
+		_, err := Git("PATCH", issue.URL, `{"milestone": null}`)
+		return err
 	}
+
+	items, err := GetAll(issue.Repository_URL+"/milestones", []*Milestone{})
+	if err != nil {
+		return err
+	}
+	milestones := items.([]*Milestone)
+
+	mileNum := -1
+	for _, mile := range milestones {
+		if mile.Title == newMile {
+			mileNum = mile.Number
+		}
+	}
+	if mileNum == -1 {
+		err = fmt.Errorf("Can't find milestone %q\n", newMile)
+		fmt.Printf("Error setting milestone: %s\n", err)
+		return err
+	}
+
+	_, err = Git("PATCH", issue.URL, fmt.Sprintf(`{"milestone": %d}`, mileNum))
 
 	return err
 }
@@ -266,7 +282,7 @@ func SetIssueMilestone(org string, repo string, num int, newMile string) (*Issue
 	}
 
 	url := fmt.Sprintf("%s/repos/%s/%s/issues/%d", GitHubURL, org, repo, num)
-	res, err := Git("PATCH", url, fmt.Sprintf(`{"milestone": "%s"}`, mileNum))
+	res, err := Git("PATCH", url, fmt.Sprintf(`{"milestone": %d}`, mileNum))
 	if err != nil {
 		return nil, err
 	}
