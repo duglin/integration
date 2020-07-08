@@ -12,6 +12,7 @@ import (
 
 var ZenToken = ""
 var ZenHubURL = ""
+var ZenSecret = ""
 
 func Zen(method string, url string, body string) (string, error) {
 	buf := []byte{}
