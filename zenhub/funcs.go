@@ -189,7 +189,7 @@ func GetPipeline(repoID int, workspace string, pipeline string) (*Pipeline, erro
 func AddTask(epicRepoID int, epicNum int, taskRepoID int, taskNum int) error {
 	url := fmt.Sprintf("%s/p1/repositories/%d/epics/%d/update_issues",
 		ZenHubURL, epicRepoID, epicNum)
-	body := fmt.Sprintf(`{"add_issues":[{"repo_id":%d,"issue_number":%d}]}`,
+	body := fmt.Sprintf(`{"remove_issues":[],"add_issues":[{"repo_id":%d,"issue_number":%d}]}`,
 		taskRepoID, taskNum)
 	_, err := Zen("POST", url, body)
 	return err
