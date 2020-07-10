@@ -34,8 +34,8 @@ func Zen(method string, url string, body string) (string, error) {
 	buf, _ = ioutil.ReadAll(res.Body)
 	// fmt.Printf("    Res: %d %s\n", res.StatusCode, string(buf))
 	if res.StatusCode/100 != 2 {
-		// fmt.Printf("Zen Error:\n--> %s %s\n--> %s\n", method, url, body)
-		// fmt.Printf("%d %s\n", res.StatusCode, string(buf))
+		fmt.Printf("Zen Error:\n--> %s %s\n--> %s\n", method, url, body)
+		fmt.Printf("%d %s\n", res.StatusCode, string(buf))
 		return "", fmt.Errorf("Error zening: %d %s\n", res.StatusCode, string(buf))
 	}
 	return string(buf), nil
