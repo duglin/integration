@@ -253,6 +253,32 @@ func (repo *Repository) GetLabels() ([]*Label, error) {
 	return items.([]*Label), nil
 }
 
+func (repo *Repository) GetIssues(query string) ([]*Issue, error) {
+	url := repo.URL + "/issues"
+	if query != "" {
+		url += "?" + query
+	}
+
+	items, err := GetAll(url, []*Issue{})
+	if err != nil {
+		return nil, err
+	}
+	return items.([]*Issue), nil
+}
+
+func (repo *Repository) GetMilestones(query string) ([]*Milestone, error) {
+	url := repo.URL + "/milestones"
+	if query != "" {
+		url += "?" + query
+	}
+
+	items, err := GetAll(url, []*Milestone{})
+	if err != nil {
+		return nil, err
+	}
+	return items.([]*Milestone), nil
+}
+
 // Static methods
 
 func GetRepository(org string, name string) (*Repository, error) {
@@ -329,6 +355,30 @@ func GetIssue(url string) (*Issue, error) {
 func GetIssueParts(org string, repo string, num int) (*Issue, error) {
 	url := fmt.Sprintf("%s/repos/%s/%s/issues/%d", GitHubURL, org, repo, num)
 	return GetIssue(url)
+}
+
+func GetIssuesParts(org string, repo string, query string) ([]*Issue, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s/issues", GitHubURL, org, repo)
+	if query != "" {
+		url += "?" + query
+	}
+	items, err := GetAll(url, []*Issue{})
+	if err != nil {
+		return nil, err
+	}
+	return items.([]*Issue), nil
+}
+
+func GetMilestones(org string, repo string, query string) ([]*Milestone, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s/milestones", GitHubURL, org, repo)
+	if query != "" {
+		url += "?" + query
+	}
+	items, err := GetAll(url, []*Milestone{})
+	if err != nil {
+		return nil, err
+	}
+	return items.([]*Milestone), nil
 }
 
 func GetRepositoryTeams(org string, repo string) ([]*Team, error) {
