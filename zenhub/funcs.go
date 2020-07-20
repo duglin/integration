@@ -2,6 +2,7 @@ package zenhub
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -26,7 +27,11 @@ func Zen(method string, url string, body string) (string, error) {
 
 	// fmt.Printf("*** ZEN: %s %s\n%s\n", method, url, body)
 
-	res, err := (&http.Client{}).Do(req)
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+
+	res, err := (&http.Client{Transport: tr}).Do(req)
 	if err != nil {
 		return "", err
 	}

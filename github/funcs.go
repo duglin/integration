@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/sha1"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -35,10 +36,11 @@ func Git(method string, url string, body string) (*GitResponse, error) {
 	}
 	req, err := http.NewRequest(method, url, bytes.NewReader(buf))
 	if err != nil {
+		fmt.Printf("Git: %s %s\n", method, url)
 		return nil, err
 	}
 
-	auth := base64.StdEncoding.EncodeToString([]byte("dug:" + GitHubToken))
+	auth := base64.StdEncoding.EncodeToString([]byte("user:" + GitHubToken))
 	req.Header.Add("Authorization", "Basic "+auth)
 	req.Header.Add("Content-Type", "application/json")
 
@@ -47,7 +49,11 @@ func Git(method string, url string, body string) (*GitResponse, error) {
 		req.Header.Add("Accept", "application/vnd.github.inertia-preview+json")
 	}
 
-	res, err := (&http.Client{}).Do(req)
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+
+	res, err := (&http.Client{Transport: tr}).Do(req)
 	if err != nil {
 		return nil, err
 	}
