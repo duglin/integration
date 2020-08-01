@@ -184,6 +184,22 @@ func (issue *Issue) Reopen() error {
 	return err
 }
 
+func (issue *Issue) SetBody(body string) error {
+	data := Body(body)
+	res, err := Git("PATCH", issue.URL, string(data))
+	if err != nil {
+		return err
+	}
+
+	newIssue := Issue{}
+	if err = json.Unmarshal([]byte(res.Body), &newIssue); err != nil {
+		return err
+	}
+	*issue = newIssue
+
+	return nil
+}
+
 func (issue *Issue) IsAssignee(user string) bool {
 	for _, assignee := range issue.Assignees {
 		if strings.EqualFold(user, assignee.Login) {
@@ -401,4 +417,198 @@ func IsUserInOrganization(org string, user string) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// Github Data Manipulation
+
+type GitDataEntry struct {
+	Label   string
+	Entries []string
+}
+
+type GitData struct {
+	Body []string
+	Data []*GitDataEntry
+}
+
+func (gd *GitData) AddData(label string, text string) {
+	var gde *GitDataEntry
+
+	for _, gde = range gd.Data {
+		if gde.Label == label {
+			break
+		}
+		gde = nil
+	}
+
+	if gde == nil {
+		gde = &GitDataEntry{
+			Label: label,
+		}
+		gd.Data = append(gd.Data, gde)
+	}
+
+	for _, val := range gde.Entries {
+		if val == text {
+			return
+		}
+	}
+
+	gde.Entries = append(gde.Entries, text)
+}
+
+func (gd *GitData) DeleteData(label string, text string) bool {
+	res := false
+	for j, gde := range gd.Data {
+		if gde.Label == label {
+			for i, val := range gde.Entries {
+				if val == text {
+					gde.Entries = append(gde.Entries[:i], gde.Entries[i+1:]...)
+					res = true
+				}
+			}
+			if len(gde.Entries) == 0 || text == "" {
+				gde.Entries = nil
+				gd.Data = append(gd.Data[:j], gd.Data[j+1:]...)
+				res = true
+			}
+			return res
+		}
+	}
+	return false
+}
+
+func (gd *GitData) HasData(label string, text string) bool {
+	var gde *GitDataEntry
+
+	for _, gde = range gd.Data {
+		if gde.Label == label {
+			break
+		}
+		gde = nil
+	}
+
+	if gde == nil {
+		return false
+	}
+
+	for _, val := range gde.Entries {
+		if val == text {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (gd *GitData) SetData(label string, text string) {
+	var gde *GitDataEntry
+
+	for _, gde = range gd.Data {
+		if gde.Label == label {
+			break
+		}
+		gde = nil
+	}
+
+	if gde == nil {
+		gde = &GitDataEntry{
+			Label: label,
+		}
+		gd.Data = append(gd.Data, gde)
+	}
+
+	gde.Entries = []string{text}
+}
+
+func (issue *Issue) GetData() *GitData {
+	data := &GitData{}
+
+	lines := strings.Split(issue.Body, "\n")
+	for _, line := range lines {
+		// line = strings.TrimSpace(line)
+
+		// **_Title_**: text
+		i := strings.Index(line, "_**: ")
+		if i < 2 || !strings.HasPrefix(line, "**_") {
+			data.Body = append(data.Body, line)
+			continue
+		}
+
+		label, text := "", ""
+
+		label = strings.TrimSpace(line[3:i])
+		text = strings.TrimSpace(line[i+5:])
+
+		data.AddData(label, text)
+	}
+
+	// Remove trailing "---" || "" in Body
+	for len(data.Body) > 0 {
+		line := strings.TrimSpace(data.Body[len(data.Body)-1])
+
+		if line == "---" || line == "" {
+			data.Body = data.Body[:len(data.Body)-1]
+			continue
+		}
+		break
+	}
+
+	return data
+}
+
+func (issue *Issue) AddData(label string, text string) error {
+	data := issue.GetData()
+	data.AddData(label, text)
+	return issue.SetGitData(data)
+}
+
+func (issue *Issue) DeleteData(label string, text string) error {
+	data := issue.GetData()
+	if data.DeleteData(label, text) {
+		return issue.SetGitData(data)
+	}
+	return nil
+}
+
+func (issue *Issue) HasData(label string, text string) bool {
+	data := issue.GetData()
+	return data.HasData(label, text)
+}
+
+func (issue *Issue) SetData(label string, text string) error {
+	data := issue.GetData()
+	data.SetData(label, text)
+	return issue.SetGitData(data)
+}
+
+func (issue *Issue) SetGitData(data *GitData) error {
+	body := ""
+
+	// Remove trailing "---" || "" in Body
+	for len(data.Body) > 0 {
+		line := strings.TrimSpace(data.Body[len(data.Body)-1])
+
+		if line == "---" || line == "" {
+			data.Body = data.Body[:len(data.Body)-1]
+			continue
+		}
+		break
+	}
+
+	for _, line := range data.Body {
+		body += line + "\n"
+	}
+
+	if len(data.Data) > 0 {
+		body += "\n---\n"
+
+		for _, gde := range data.Data {
+			for _, entry := range gde.Entries {
+				body += fmt.Sprintf("**_%s_**: %s\n", gde.Label, entry)
+			}
+		}
+	}
+
+	return issue.SetBody(body)
 }
