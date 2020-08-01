@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"reflect"
+	"sort"
 	"strings"
 )
 
@@ -195,6 +196,9 @@ func (issue *Issue) SetBody(body string) error {
 	if err = json.Unmarshal([]byte(res.Body), &newIssue); err != nil {
 		return err
 	}
+
+	// Erase old data and replace with the updated Issue
+	*issue = Issue{}
 	*issue = newIssue
 
 	return nil
@@ -421,113 +425,66 @@ func IsUserInOrganization(org string, user string) (bool, error) {
 
 // Github Data Manipulation
 
-type GitDataEntry struct {
-	Label   string
-	Entries []string
-}
-
 type GitData struct {
 	Body []string
-	Data []*GitDataEntry
+	Data [][2]string
+}
+
+type ByLabel [][2]string
+
+func (a ByLabel) Len() int      { return len(a) }
+func (a ByLabel) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a ByLabel) Less(i, j int) bool {
+	if a[i][0] == a[j][0] {
+		return a[i][1] < a[j][1]
+	}
+	return a[i][0] < a[j][0]
 }
 
 func (gd *GitData) AddData(label string, text string) {
-	var gde *GitDataEntry
-
-	for _, gde = range gd.Data {
-		if gde.Label == label {
-			break
-		}
-		gde = nil
-	}
-
-	if gde == nil {
-		gde = &GitDataEntry{
-			Label: label,
-		}
-		gd.Data = append(gd.Data, gde)
-	}
-
-	for _, val := range gde.Entries {
-		if val == text {
+	for _, entry := range gd.Data {
+		if entry[0] == label && entry[1] == text {
 			return
 		}
 	}
 
-	gde.Entries = append(gde.Entries, text)
+	gd.Data = append(gd.Data, [2]string{label, text})
 }
 
 func (gd *GitData) DeleteData(label string, text string) bool {
 	res := false
-	for j, gde := range gd.Data {
-		if gde.Label == label {
-			for i, val := range gde.Entries {
-				if val == text {
-					gde.Entries = append(gde.Entries[:i], gde.Entries[i+1:]...)
-					res = true
-				}
-			}
-			if len(gde.Entries) == 0 || text == "" {
-				gde.Entries = nil
-				gd.Data = append(gd.Data[:j], gd.Data[j+1:]...)
-				res = true
-			}
-			return res
+	for i, entry := range gd.Data {
+		if entry[0] == label && (text == "" || entry[1] == text) {
+			gd.Data = append(gd.Data[:i], gd.Data[i+1:]...)
+			res = true
 		}
 	}
-	return false
+	if len(gd.Data) == 0 {
+		gd.Data = nil
+	}
+
+	return res
 }
 
 func (gd *GitData) HasData(label string, text string) bool {
-	var gde *GitDataEntry
-
-	for _, gde = range gd.Data {
-		if gde.Label == label {
-			break
-		}
-		gde = nil
-	}
-
-	if gde == nil {
-		return false
-	}
-
-	for _, val := range gde.Entries {
-		if val == text {
+	for _, entry := range gd.Data {
+		if entry[0] == label && entry[1] == text {
 			return true
 		}
 	}
-
 	return false
 }
 
 func (gd *GitData) SetData(label string, text string) {
-	var gde *GitDataEntry
-
-	for _, gde = range gd.Data {
-		if gde.Label == label {
-			break
-		}
-		gde = nil
-	}
-
-	if gde == nil {
-		gde = &GitDataEntry{
-			Label: label,
-		}
-		gd.Data = append(gd.Data, gde)
-	}
-
-	gde.Entries = []string{text}
+	gd.DeleteData(label, "")
+	gd.AddData(label, text)
 }
 
-func (issue *Issue) GetData() *GitData {
+func (issue *Issue) GetGitData() *GitData {
 	data := &GitData{}
 
 	lines := strings.Split(issue.Body, "\n")
 	for _, line := range lines {
-		// line = strings.TrimSpace(line)
-
 		// **_Title_**: text
 		i := strings.Index(line, "_**: ")
 		if i < 2 || !strings.HasPrefix(line, "**_") {
@@ -557,14 +514,27 @@ func (issue *Issue) GetData() *GitData {
 	return data
 }
 
+func (issue *Issue) GetData(label string) []string {
+	data := issue.GetGitData()
+
+	var res []string = nil
+	for _, entry := range data.Data {
+		if entry[0] == label {
+			res = append(res, entry[1])
+		}
+	}
+
+	return res
+}
+
 func (issue *Issue) AddData(label string, text string) error {
-	data := issue.GetData()
+	data := issue.GetGitData()
 	data.AddData(label, text)
 	return issue.SetGitData(data)
 }
 
 func (issue *Issue) DeleteData(label string, text string) error {
-	data := issue.GetData()
+	data := issue.GetGitData()
 	if data.DeleteData(label, text) {
 		return issue.SetGitData(data)
 	}
@@ -572,12 +542,12 @@ func (issue *Issue) DeleteData(label string, text string) error {
 }
 
 func (issue *Issue) HasData(label string, text string) bool {
-	data := issue.GetData()
+	data := issue.GetGitData()
 	return data.HasData(label, text)
 }
 
 func (issue *Issue) SetData(label string, text string) error {
-	data := issue.GetData()
+	data := issue.GetGitData()
 	data.SetData(label, text)
 	return issue.SetGitData(data)
 }
@@ -603,10 +573,10 @@ func (issue *Issue) SetGitData(data *GitData) error {
 	if len(data.Data) > 0 {
 		body += "\n---\n"
 
-		for _, gde := range data.Data {
-			for _, entry := range gde.Entries {
-				body += fmt.Sprintf("**_%s_**: %s\n", gde.Label, entry)
-			}
+		sort.Sort(ByLabel(data.Data))
+
+		for _, entry := range data.Data {
+			body += fmt.Sprintf("**_%s_**: %s\n", entry[0], entry[1])
 		}
 	}
 
