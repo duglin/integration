@@ -17,7 +17,7 @@ import (
 )
 
 var GitHubToken = ""
-var GitHubURL = ""
+var GitHubHost = ""
 var GitHubSecret = "" // used to verify events are from github
 
 type GitResponse struct {
@@ -27,6 +27,14 @@ type GitResponse struct {
 }
 
 func Git(method string, url string, body string) (*GitResponse, error) {
+	if !strings.HasPrefix(url, "https://") {
+		if len(url) > 0 && url[0] != '/' {
+			url = "/" + url
+		}
+
+		url = fmt.Sprintf("https://%s/api/v3%s", GitHubHost, url)
+	}
+
 	gitResponse := GitResponse{
 		Links: map[string]string{},
 	}
@@ -123,6 +131,60 @@ func GetAll(url string, daItem interface{}) (interface{}, error) {
 	}
 
 	return result.Interface(), nil
+}
+
+func GraphQL(cmd string) (map[string]interface{}, error) {
+	buf := []byte{}
+	resMap := map[string]interface{}{}
+
+	js := struct {
+		Query string `json:"query"`
+	}{
+		Query: cmd,
+	}
+
+	buf, err := json.Marshal(js)
+	if err != nil {
+		return nil, err
+	}
+
+	url := "https://api." + GitHubHost + "/graphql"
+
+	req, err := http.NewRequest("POST", url, bytes.NewReader(buf))
+	if err != nil {
+		fmt.Printf("GitQL: %s\n", url)
+		return nil, err
+	}
+
+	auth := base64.StdEncoding.EncodeToString([]byte("user:" + GitHubToken))
+	req.Header.Add("Authorization", "Basic "+auth)
+	req.Header.Add("Content-Type", "application/json")
+
+	if strings.Contains(url, "projects") || strings.Contains(url, "cards") ||
+		strings.Contains(url, "columns") {
+		req.Header.Add("Accept", "application/vnd.github.inertia-preview+json")
+	}
+
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+
+	res, err := (&http.Client{Transport: tr}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	buf, _ = ioutil.ReadAll(res.Body)
+
+	if res.StatusCode/100 != 2 {
+		return nil,
+			fmt.Errorf("GitQL: Error %s: %d %s\nReq Body: %s\n", url,
+				res.StatusCode, string(buf), cmd)
+	}
+
+	err = json.Unmarshal(buf, &resMap)
+
+	return resMap, err
 }
 
 func VerifyEvent(req *http.Request, body []byte) bool {
@@ -308,7 +370,7 @@ func (repo *Repository) GetMilestones(query string) ([]*Milestone, error) {
 // Static methods
 
 func GetRepository(org string, name string) (*Repository, error) {
-	res, err := Git("GET", GitHubURL+"/repos/"+org+"/"+name, "")
+	res, err := Git("GET", "/repos/"+org+"/"+name, "")
 	if err != nil {
 		return nil, err
 	}
@@ -322,7 +384,7 @@ func GetRepository(org string, name string) (*Repository, error) {
 }
 
 func SetIssueMilestone(org string, repo string, num int, newMile string) (*Issue, error) {
-	items, err := GetAll(GitHubURL+"/repos/"+org+"/"+repo+"/milestones",
+	items, err := GetAll("/repos/"+org+"/"+repo+"/milestones",
 		[]*Milestone{})
 	if err != nil {
 		return nil, err
@@ -340,7 +402,7 @@ func SetIssueMilestone(org string, repo string, num int, newMile string) (*Issue
 		return nil, err
 	}
 
-	url := fmt.Sprintf("%s/repos/%s/%s/issues/%d", GitHubURL, org, repo, num)
+	url := fmt.Sprintf("/repos/%s/%s/issues/%d", org, repo, num)
 	res, err := Git("PATCH", url, fmt.Sprintf(`{"milestone": %d}`, mileNum))
 	if err != nil {
 		return nil, err
@@ -355,8 +417,7 @@ func SetIssueMilestone(org string, repo string, num int, newMile string) (*Issue
 }
 
 func GetRepositoryMilestones(org string, repo string) ([]*Milestone, error) {
-	items, err := GetAll(GitHubURL+"/repos/"+org+"/"+repo+"/milestones",
-		[]*Milestone{})
+	items, err := GetAll("/repos/"+org+"/"+repo+"/milestones", []*Milestone{})
 	if err != nil {
 		return nil, err
 	}
@@ -379,12 +440,12 @@ func GetIssue(url string) (*Issue, error) {
 }
 
 func GetIssueParts(org string, repo string, num int) (*Issue, error) {
-	url := fmt.Sprintf("%s/repos/%s/%s/issues/%d", GitHubURL, org, repo, num)
+	url := fmt.Sprintf("/repos/%s/%s/issues/%d", org, repo, num)
 	return GetIssue(url)
 }
 
 func GetIssuesParts(org string, repo string, query string) ([]*Issue, error) {
-	url := fmt.Sprintf("%s/repos/%s/%s/issues", GitHubURL, org, repo)
+	url := fmt.Sprintf("/repos/%s/%s/issues", org, repo)
 	if query != "" {
 		url += "?" + query
 	}
@@ -396,7 +457,7 @@ func GetIssuesParts(org string, repo string, query string) ([]*Issue, error) {
 }
 
 func GetMilestones(org string, repo string, query string) ([]*Milestone, error) {
-	url := fmt.Sprintf("%s/repos/%s/%s/milestones", GitHubURL, org, repo)
+	url := fmt.Sprintf("/repos/%s/%s/milestones", org, repo)
 	if query != "" {
 		url += "?" + query
 	}
@@ -408,7 +469,7 @@ func GetMilestones(org string, repo string, query string) ([]*Milestone, error) 
 }
 
 func GetRepositoryTeams(org string, repo string) ([]*Team, error) {
-	items, err := GetAll(GitHubURL+"/repos/"+org+"/"+repo+"/teams", []*Label{})
+	items, err := GetAll("/repos/"+org+"/"+repo+"/teams", []*Label{})
 	if err != nil {
 		return nil, err
 	}
@@ -416,7 +477,7 @@ func GetRepositoryTeams(org string, repo string) ([]*Team, error) {
 }
 
 func IsUserInOrganization(org string, user string) (bool, error) {
-	_, err := Git("GET", GitHubURL+"/orgs/"+org+"/public_members/"+user, "")
+	_, err := Git("GET", "/orgs/"+org+"/public_members/"+user, "")
 	if err != nil {
 		return false, err
 	}
@@ -581,4 +642,52 @@ func (issue *Issue) SetGitData(data *GitData) error {
 	}
 
 	return issue.SetBody(body)
+}
+
+func (issue *Issue) GetRepository() (*Repository, error) {
+	res, err := Git("GET", issue.Repository_URL, "")
+	if err != nil {
+		return nil, err
+	}
+
+	repo := Repository{}
+	if err = json.Unmarshal([]byte(res.Body), &repo); err != nil {
+		return nil, err
+	}
+
+	return &repo, nil
+}
+
+func (issue *Issue) MoveToRepository(repoName string) error {
+	oldRepo, err := issue.GetRepository()
+	if err != nil {
+		return err
+	}
+
+	newRepo, err := GetRepository(oldRepo.Owner.Login, repoName)
+	if err != nil {
+		return err
+	}
+
+	cmd := fmt.Sprintf(`
+mutation {
+  transferIssue( input:{
+    issueId : "%s",
+	repositoryId : "%s"
+  }) {
+    issue { number }
+  }
+}
+`, issue.Node_ID, newRepo.Node_ID)
+
+	res, err := GraphQL(cmd)
+	if err != nil {
+		return err
+	}
+
+	if res["errors"] != nil {
+		return fmt.Errorf("GraphQL Error: %#v\n", res["errors"])
+	}
+
+	return nil
 }

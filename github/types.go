@@ -164,11 +164,17 @@ type Repository struct {
 	Archived          bool
 	Disabled          bool
 	Open_Issue_Count  int
-	License           string
-	Forks             int
-	Open_Isses        int
-	Watchers          int
-	Default_Branch    string
+	License           struct {
+		Key     string
+		Name    string
+		SPDX_ID string
+		URL     string
+		Node_ID string
+	}
+	Forks          int
+	Open_Isses     int
+	Watchers       int
+	Default_Branch string
 }
 
 type Organization struct {
