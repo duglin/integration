@@ -236,11 +236,8 @@ type Event_Issue_Comment struct {
 }
 
 type Event_Issues struct {
-	Action       string
-	Sender       *User
-	Repository   *Repository
-	Organization *Organization
-
+	Action  string
+	Issue   *Issue
 	Changes struct { // only for "edited" actions
 		Title struct {
 			From string
@@ -249,7 +246,31 @@ type Event_Issues struct {
 			From string
 		}
 	}
-	Issue    *Issue
-	Label    *Label
-	Assignee *User
+	Assignee     *User
+	Label        *Label
+	Repository   *Repository
+	Organization *Organization
+	// Installation
+	Sender *User
+}
+
+type Event_Milestone struct {
+	Action    string
+	Milestone *Milestone
+	Changes   struct {
+		Description struct {
+			From string
+		}
+		Due_On struct {
+			From string
+		}
+		Title struct {
+			From string
+		}
+	}
+	Repository   *Repository
+	Organization *Organization
+	Installation struct {
+	}
+	Sender *User
 }

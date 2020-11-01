@@ -27,6 +27,7 @@ type GitResponse struct {
 }
 
 func Git(method string, url string, body string) (*GitResponse, error) {
+	// fmt.Printf("Git: %s %s\n%s\n\n", method, url, body)
 	if !strings.HasPrefix(url, "https://") {
 		if len(url) > 0 && url[0] != '/' {
 			url = "/" + url
@@ -266,6 +267,16 @@ func (issue *Issue) SetBody(body string) error {
 	return nil
 }
 
+func (issue *Issue) Refresh() error {
+	newIssue, err := GetIssue(issue.URL)
+	if err != nil {
+		return err
+	}
+	*issue = Issue{}
+	*issue = *newIssue
+	return nil
+}
+
 func (issue *Issue) IsAssignee(user string) bool {
 	for _, assignee := range issue.Assignees {
 		if strings.EqualFold(user, assignee.Login) {
@@ -333,6 +344,38 @@ func (org *Organization) IsMember(user string) (bool, error) {
 	return true, nil
 }
 
+func (org *Organization) IsTeamMember(user string, team string) (bool, error) {
+	if len(user) > 1 && user[0] == '@' {
+		user = user[1:]
+	}
+
+	res, err := Git("GET", org.URL+"/teams/"+team, "")
+	if err != nil {
+		if res != nil && res.StatusCode == 404 {
+			return false, fmt.Errorf("Team %q not found", team)
+		}
+		return false, err
+	}
+
+	daTeam := Team{}
+	if err = json.Unmarshal([]byte(res.Body), &daTeam); err != nil {
+		return false, err
+	}
+
+	loc := fmt.Sprintf("/organizations/%d/team/%d/memberships/%s",
+		org.ID, daTeam.ID, user)
+	res, err = Git("GET", loc, "")
+	if err != nil {
+		fmt.Printf("Err: %s\n", err)
+		if res != nil && res.StatusCode == 404 {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
+}
+
 func (repo *Repository) GetLabels() ([]*Label, error) {
 	items, err := GetAll(repo.URL+"/labels", []*Label{})
 	if err != nil {
@@ -365,6 +408,31 @@ func (repo *Repository) GetMilestones(query string) ([]*Milestone, error) {
 		return nil, err
 	}
 	return items.([]*Milestone), nil
+}
+
+// /repos/:owner/:repo/issues/:issue_number
+func GetMilestone(url string) (*Milestone, error) {
+	res, err := Git("GET", url, "")
+	if err != nil {
+		return nil, err
+	}
+
+	milestone := Milestone{}
+	if err = json.Unmarshal([]byte(res.Body), &milestone); err != nil {
+		return nil, err
+	}
+
+	return &milestone, nil
+}
+
+func (milestone *Milestone) Refresh() error {
+	newMile, err := GetMilestone(milestone.URL)
+	if err != nil {
+		return err
+	}
+	*milestone = Milestone{}
+	*milestone = *newMile
+	return nil
 }
 
 // Static methods
@@ -588,6 +656,18 @@ func (issue *Issue) GetData(label string) []string {
 	return res
 }
 
+func (issue *Issue) GetSingleData(label string) string {
+	data := issue.GetGitData()
+
+	for _, entry := range data.Data {
+		if entry[0] == label {
+			return entry[1]
+		}
+	}
+
+	return ""
+}
+
 func (issue *Issue) AddData(label string, text string) error {
 	data := issue.GetGitData()
 	data.AddData(label, text)
@@ -608,6 +688,9 @@ func (issue *Issue) HasData(label string, text string) bool {
 }
 
 func (issue *Issue) SetData(label string, text string) error {
+	if d := issue.GetData(label); len(d) == 1 && d[0] == text {
+		return nil
+	}
 	data := issue.GetGitData()
 	data.SetData(label, text)
 	return issue.SetGitData(data)
