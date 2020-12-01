@@ -434,6 +434,18 @@ func (feature *Feature) SetStatus(status string) error {
 	return err
 }
 
+func (feature *Feature) SetDueDate(date string) error {
+	body := fmt.Sprintf(`{"feature":{"due_date":"%s"}}`, date)
+
+	_, err := Aha("PUT", AhaURL+"/api/v1/features/"+feature.Reference_Num, body)
+	if err != nil {
+		err = fmt.Errorf("Error updating Aha feature(%s) end_date: %s",
+			feature.Reference_Num, date)
+	}
+
+	return err
+}
+
 func (feature *Feature) AddTag(tag string) error {
 	for _, t := range feature.Tags {
 		if t == tag {
