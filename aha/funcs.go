@@ -162,6 +162,32 @@ func (product *Product) GetFeatures() ([]*Feature, error) {
 	return features, err
 }
 
+func (product *Product) GetFeaturesByReleaseName(name string) ([]*Feature, error) {
+	rel, err := product.GetReleaseByName(name)
+	if err != nil {
+		return nil, fmt.Errorf("Can't find Aha release %q: %s", name, err)
+	}
+	if rel == nil {
+		return nil, fmt.Errorf("Can't find Aha release %q", name)
+	}
+
+	fmt.Printf("getting features by name: %s\n", name)
+	items, err := GetAll(AhaURL+"/api/v1/releases/"+rel.ID+"/features?fields=*",
+		[]*Feature{})
+	fmt.Printf("done\n")
+	if err != nil {
+		return nil, err
+	}
+
+	features := items.([]*Feature)
+
+	for _, f := range features {
+		f.Product = product
+	}
+
+	return features, err
+}
+
 func (product *Product) GetFeatureByID(id string) (*Feature, error) {
 	fmt.Printf("getting features: %s\n", id)
 
@@ -190,8 +216,14 @@ func (product *Product) CreateFeature(title string, relName string, desc string)
 		return nil, fmt.Errorf("Can't find Aha release %q", relName)
 	}
 
-	data := fmt.Sprintf(`{"feature":{"name":"%s",`+
-		`"description":"%s",`+
+	buf, _ := json.Marshal(title)
+	title = string(buf)
+
+	buf, _ = json.Marshal(desc)
+	desc = string(buf)
+
+	data := fmt.Sprintf(`{"feature":{"name":%s,`+
+		`"description":%s,`+
 		`"workflow_kind":"new",`+
 		`"workflow_status":{"name":"%s"}}}`,
 		title, desc, "Under consideration")
@@ -362,7 +394,10 @@ func (feature *Feature) Delete() (bool, error) {
 }
 
 func (feature *Feature) SetReleaseByID(id string) error {
-	body := fmt.Sprintf(`{"feature":{"release":"%s"}}`, id)
+	buf, _ := json.Marshal(id)
+	id = string(buf)
+
+	body := fmt.Sprintf(`{"feature":{"release":%s}}`, id)
 	_, err := Aha("PUT", AhaURL+"/api/v1/features/"+feature.Reference_Num, body)
 	if err != nil {
 		err = fmt.Errorf("Error moving Feature %q to release %q",
@@ -397,7 +432,10 @@ func (feature *Feature) GetGitURL() (string, error) {
 }
 
 func (feature *Feature) SetGitURL(url string) error {
-	body := `{"feature":{"custom_fields":{"ghe_url":"%s"}}}`
+	buf, _ := json.Marshal(url)
+	url = string(buf)
+
+	body := `{"feature":{"custom_fields":{"ghe_url":%s}}}`
 	body = fmt.Sprintf(body, url)
 
 	res, err := Aha("PUT", AhaURL+"/api/v1/features/"+feature.Reference_Num, body)
@@ -411,7 +449,10 @@ func (feature *Feature) SetGitURL(url string) error {
 }
 
 func (feature *Feature) SetName(name string) error {
-	body := fmt.Sprintf(`{"feature":{"name":"%s"}}`, name)
+	buf, _ := json.Marshal(name)
+	name = string(buf)
+
+	body := fmt.Sprintf(`{"feature":{"name":%s}}`, name)
 
 	_, err := Aha("PUT", AhaURL+"/api/v1/features/"+feature.Reference_Num, body)
 	if err != nil {
@@ -423,7 +464,10 @@ func (feature *Feature) SetName(name string) error {
 }
 
 func (feature *Feature) SetStatus(status string) error {
-	body := fmt.Sprintf(`{"feature":{"workflow_status":{"name":"%s"}}}`, status)
+	buf, _ := json.Marshal(status)
+	status = string(buf)
+
+	body := fmt.Sprintf(`{"feature":{"workflow_status":{"name":%s}}}`, status)
 
 	_, err := Aha("PUT", AhaURL+"/api/v1/features/"+feature.Reference_Num, body)
 	if err != nil {
@@ -435,7 +479,10 @@ func (feature *Feature) SetStatus(status string) error {
 }
 
 func (feature *Feature) SetDueDate(date string) error {
-	body := fmt.Sprintf(`{"feature":{"due_date":"%s"}}`, date)
+	buf, _ := json.Marshal(date)
+	date = string(buf)
+
+	body := fmt.Sprintf(`{"feature":{"due_date":%s}}`, date)
 
 	_, err := Aha("PUT", AhaURL+"/api/v1/features/"+feature.Reference_Num, body)
 	if err != nil {
