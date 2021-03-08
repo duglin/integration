@@ -16,24 +16,125 @@ import (
 	"strings"
 )
 
-var GitHubToken = ""
-var GitHubHost = ""
-var GitHubSecret = "" // used to verify events are from github
+func (u *User) SetGH(gh *GitHubClient) {
+	if u != nil {
+		u.GitHubClient = gh
+	}
+}
+
+func (l *Label) SetGH(gh *GitHubClient) {
+	if l != nil {
+		l.GitHubClient = gh
+	}
+}
+
+func (m *Milestone) SetGH(gh *GitHubClient) {
+	if m != nil {
+		m.GitHubClient = gh
+		m.Creator.SetGH(gh)
+	}
+}
+
+func (i *Issue) SetGH(gh *GitHubClient) {
+	if i != nil {
+		i.GitHubClient = gh
+		i.User.SetGH(gh)
+		for _, l := range i.Labels {
+			l.SetGH(gh)
+		}
+		i.Assignee.SetGH(gh)
+		for _, a := range i.Assignees {
+			a.SetGH(gh)
+		}
+		i.Milestone.SetGH(gh)
+		i.Closed_By.SetGH(gh)
+	}
+}
+
+func (c *Comment) SetGH(gh *GitHubClient) {
+	if c != nil {
+		c.GitHubClient = gh
+		c.User.SetGH(gh)
+	}
+}
+
+func (r *Repository) SetGH(gh *GitHubClient) {
+	if r != nil {
+		r.GitHubClient = gh
+		r.Owner.SetGH(gh)
+	}
+}
+
+func (o *Organization) SetGH(gh *GitHubClient) {
+	if o != nil {
+		o.GitHubClient = gh
+	}
+}
+
+func (e *Enterprise) SetGH(gh *GitHubClient) {
+	if e != nil {
+		e.GitHubClient = gh
+	}
+}
+
+func (t *Team) SetGH(gh *GitHubClient) {
+	if t != nil {
+		t.GitHubClient = gh
+	}
+}
+
+func (e *Event_Issue_Comment) SetGH(gh *GitHubClient) {
+	if e != nil {
+		e.GitHubClient = gh
+		e.Sender.SetGH(gh)
+		e.Repository.SetGH(gh)
+		e.Organization.SetGH(gh)
+		e.Issue.SetGH(gh)
+		e.Comment.SetGH(gh)
+	}
+}
+
+func (e *Event_Issues) SetGH(gh *GitHubClient) {
+	if e != nil {
+		e.GitHubClient = gh
+		e.Issue.SetGH(gh)
+		e.Assignee.SetGH(gh)
+		e.Label.SetGH(gh)
+		e.Repository.SetGH(gh)
+		e.Organization.SetGH(gh)
+		e.Sender.SetGH(gh)
+	}
+}
+
+func (e *Event_Milestone) SetGH(gh *GitHubClient) {
+	if e != nil {
+		e.GitHubClient = gh
+		e.Milestone.SetGH(gh)
+		e.Repository.SetGH(gh)
+		e.Organization.SetGH(gh)
+		e.Sender.SetGH(gh)
+	}
+}
 
 type GitResponse struct {
 	StatusCode int
 	Links      map[string]string
-	Body       string
+	Body       []byte
 }
 
-func Git(method string, url string, body string) (*GitResponse, error) {
+func (gh *GitHubClient) Git(method string, url string, body string) (*GitResponse, error) {
+
+	if gh.Token == "" {
+		return nil, fmt.Errorf("Missing GitHub Token, perhaps .gitToken is missing?")
+	}
+
 	// fmt.Printf("Git: %s %s\n%s\n\n", method, url, body)
 	if !strings.HasPrefix(url, "https://") {
 		if len(url) > 0 && url[0] != '/' {
 			url = "/" + url
 		}
 
-		url = fmt.Sprintf("https://%s/api/v3%s", GitHubHost, url)
+		url = fmt.Sprintf("https://%s/api/v3%s", gh.Host, url)
 	}
 
 	gitResponse := GitResponse{
@@ -50,13 +151,13 @@ func Git(method string, url string, body string) (*GitResponse, error) {
 		return nil, err
 	}
 
-	auth := base64.StdEncoding.EncodeToString([]byte("user:" + GitHubToken))
+	auth := base64.StdEncoding.EncodeToString([]byte("user:" + gh.Token))
 	req.Header.Add("Authorization", "Basic "+auth)
 	req.Header.Add("Content-Type", "application/json")
 
 	if strings.Contains(url, "projects") || strings.Contains(url, "cards") ||
 		strings.Contains(url, "columns") {
-		req.Header.Add("Accept", "application/vnd.github.inertia-preview+json")
+		req.Header.Add("Accept", "application/vnd.GitHubClient.inertia-preview+json")
 	}
 
 	tr := &http.Transport{
@@ -71,7 +172,7 @@ func Git(method string, url string, body string) (*GitResponse, error) {
 	buf, _ = ioutil.ReadAll(res.Body)
 
 	gitResponse.StatusCode = res.StatusCode
-	gitResponse.Body = string(buf)
+	gitResponse.Body = buf
 
 	if res.StatusCode/100 != 2 {
 		// fmt.Printf("Git Error:\n--> %s %s\n--> %s\n", method, url, body)
@@ -102,14 +203,14 @@ func Git(method string, url string, body string) (*GitResponse, error) {
 }
 
 // daItem is an empty slice of the resource type to return (e.g. []*Issue{})
-func GetAll(url string, daItem interface{}) (interface{}, error) {
+func (gh *GitHubClient) GetAll(url string, daItem interface{}) (interface{}, error) {
 	daType := reflect.TypeOf(daItem)
 	result := reflect.MakeSlice(daType, 0, 0)
 
 	for url != "" {
 		var res *GitResponse
 		var err error
-		if res, err = Git("GET", url, ""); err != nil {
+		if res, err = gh.Git("GET", url, ""); err != nil {
 			return nil, err
 		}
 
@@ -119,7 +220,7 @@ func GetAll(url string, daItem interface{}) (interface{}, error) {
 		// Create an empty slice Value and make our pointer reference it
 		itemsPtr.Elem().Set(reflect.MakeSlice(daType, 0, 0))
 
-		err = json.Unmarshal([]byte(res.Body), itemsPtr.Interface())
+		err = json.Unmarshal(res.Body, itemsPtr.Interface())
 		if err != nil {
 			return nil, err
 		}
@@ -134,7 +235,7 @@ func GetAll(url string, daItem interface{}) (interface{}, error) {
 	return result.Interface(), nil
 }
 
-func GraphQL(cmd string) (map[string]interface{}, error) {
+func (gh *GitHubClient) GraphQL(cmd string) (map[string]interface{}, error) {
 	buf := []byte{}
 	resMap := map[string]interface{}{}
 
@@ -149,7 +250,7 @@ func GraphQL(cmd string) (map[string]interface{}, error) {
 		return nil, err
 	}
 
-	url := "https://api." + GitHubHost + "/graphql"
+	url := "https://api." + gh.Host + "/graphql"
 
 	req, err := http.NewRequest("POST", url, bytes.NewReader(buf))
 	if err != nil {
@@ -157,7 +258,7 @@ func GraphQL(cmd string) (map[string]interface{}, error) {
 		return nil, err
 	}
 
-	auth := base64.StdEncoding.EncodeToString([]byte("user:" + GitHubToken))
+	auth := base64.StdEncoding.EncodeToString([]byte("user:" + gh.Token))
 	req.Header.Add("Authorization", "Basic "+auth)
 	req.Header.Add("Content-Type", "application/json")
 
@@ -188,7 +289,7 @@ func GraphQL(cmd string) (map[string]interface{}, error) {
 	return resMap, err
 }
 
-func VerifyEvent(req *http.Request, body []byte) bool {
+func (gh *GitHubClient) VerifyEvent(req *http.Request, body []byte) bool {
 	sig := req.Header.Get("X-HUB-SIGNATURE")
 
 	if len(sig) != 45 || !strings.HasPrefix(sig, "sha1=") {
@@ -198,7 +299,7 @@ func VerifyEvent(req *http.Request, body []byte) bool {
 	calc := make([]byte, 20)
 	hex.Decode(calc, []byte(sig[5:]))
 
-	mac := hmac.New(sha1.New, []byte(GitHubSecret))
+	mac := hmac.New(sha1.New, []byte(gh.Secret))
 	mac.Write(body)
 
 	return hmac.Equal(calc, mac.Sum(nil))
@@ -215,12 +316,12 @@ func Body(str string) string {
 }
 
 func (issue *Issue) AddLabel(label string) error {
-	_, err := Git("POST", issue.URL+"/labels", `{"labels": [ "`+label+`"]}`)
+	_, err := issue.Git("POST", issue.URL+"/labels", `{"labels": [ "`+label+`"]}`)
 	return err
 }
 
 func (issue *Issue) RemoveLabel(label string) error {
-	_, err := Git("DELETE", issue.URL+"/labels/"+label, "")
+	_, err := issue.Git("DELETE", issue.URL+"/labels/"+label, "")
 	return err
 }
 
@@ -234,31 +335,32 @@ func (issue *Issue) HasLabel(label string) bool {
 }
 
 func (issue *Issue) AddComment(comment string) error {
-	_, err := Git("POST", issue.URL+"/comments", Body(comment))
+	_, err := issue.Git("POST", issue.URL+"/comments", Body(comment))
 	return err
 }
 
 func (issue *Issue) Close() error {
-	_, err := Git("PATCH", issue.URL, `{"state":"closed"}`)
+	_, err := issue.Git("PATCH", issue.URL, `{"state":"closed"}`)
 	return err
 }
 
 func (issue *Issue) Reopen() error {
-	_, err := Git("PATCH", issue.URL, `{"state":"open"}`)
+	_, err := issue.Git("PATCH", issue.URL, `{"state":"open"}`)
 	return err
 }
 
 func (issue *Issue) SetBody(body string) error {
 	data := Body(body)
-	res, err := Git("PATCH", issue.URL, string(data))
+	res, err := issue.Git("PATCH", issue.URL, string(data))
 	if err != nil {
 		return err
 	}
 
 	newIssue := Issue{}
-	if err = json.Unmarshal([]byte(res.Body), &newIssue); err != nil {
+	if err = json.Unmarshal(res.Body, &newIssue); err != nil {
 		return err
 	}
+	newIssue.SetGH(issue.GitHubClient)
 
 	// Erase old data and replace with the updated Issue
 	*issue = Issue{}
@@ -268,7 +370,7 @@ func (issue *Issue) SetBody(body string) error {
 }
 
 func (issue *Issue) Refresh() error {
-	newIssue, err := GetIssue(issue.URL)
+	newIssue, err := issue.GetIssue(issue.URL)
 	if err != nil {
 		return err
 	}
@@ -290,7 +392,7 @@ func (issue *Issue) AddAssignee(user string) error {
 	if len(user) > 1 && user[0] == '@' {
 		user = user[1:]
 	}
-	_, err := Git("POST", issue.URL+"/assignees", `{"assignees":["`+user+`"]}`)
+	_, err := issue.Git("POST", issue.URL+"/assignees", `{"assignees":["`+user+`"]}`)
 	return err
 }
 
@@ -298,17 +400,17 @@ func (issue *Issue) RemoveAssignee(user string) error {
 	if len(user) > 1 && user[0] == '@' {
 		user = user[1:]
 	}
-	_, err := Git("DELETE", issue.URL+"/assignees", `{"assignees":["`+user+`"]}`)
+	_, err := issue.Git("DELETE", issue.URL+"/assignees", `{"assignees":["`+user+`"]}`)
 	return err
 }
 
 func (issue *Issue) SetMilestone(newMile string) error {
 	if newMile == "" {
-		_, err := Git("PATCH", issue.URL, `{"milestone": null}`)
+		_, err := issue.Git("PATCH", issue.URL, `{"milestone": null}`)
 		return err
 	}
 
-	items, err := GetAll(issue.Repository_URL+"/milestones", []*Milestone{})
+	items, err := issue.GetAll(issue.Repository_URL+"/milestones", []*Milestone{})
 	if err != nil {
 		return err
 	}
@@ -325,7 +427,7 @@ func (issue *Issue) SetMilestone(newMile string) error {
 		return err
 	}
 
-	_, err = Git("PATCH", issue.URL, fmt.Sprintf(`{"milestone": %d}`, mileNum))
+	_, err = issue.Git("PATCH", issue.URL, fmt.Sprintf(`{"milestone": %d}`, mileNum))
 
 	return err
 }
@@ -334,7 +436,7 @@ func (org *Organization) IsMember(user string) (bool, error) {
 	if len(user) > 1 && user[0] == '@' {
 		user = user[1:]
 	}
-	res, err := Git("GET", org.URL+"/public_members/"+user, "")
+	res, err := org.Git("GET", org.URL+"/public_members/"+user, "")
 	if err != nil {
 		if res != nil && res.StatusCode == 404 {
 			return false, nil
@@ -349,7 +451,7 @@ func (org *Organization) IsTeamMember(user string, team string) (bool, error) {
 		user = user[1:]
 	}
 
-	res, err := Git("GET", org.URL+"/teams/"+team, "")
+	res, err := org.Git("GET", org.URL+"/teams/"+team, "")
 	if err != nil {
 		if res != nil && res.StatusCode == 404 {
 			return false, fmt.Errorf("Team %q not found", team)
@@ -358,13 +460,14 @@ func (org *Organization) IsTeamMember(user string, team string) (bool, error) {
 	}
 
 	daTeam := Team{}
-	if err = json.Unmarshal([]byte(res.Body), &daTeam); err != nil {
+	if err = json.Unmarshal(res.Body, &daTeam); err != nil {
 		return false, err
 	}
+	daTeam.SetGH(org.GitHubClient)
 
 	loc := fmt.Sprintf("/organizations/%d/team/%d/memberships/%s",
 		org.ID, daTeam.ID, user)
-	res, err = Git("GET", loc, "")
+	res, err = org.Git("GET", loc, "")
 	if err != nil {
 		fmt.Printf("Err: %s\n", err)
 		if res != nil && res.StatusCode == 404 {
@@ -377,7 +480,7 @@ func (org *Organization) IsTeamMember(user string, team string) (bool, error) {
 }
 
 func (repo *Repository) GetLabels() ([]*Label, error) {
-	items, err := GetAll(repo.URL+"/labels", []*Label{})
+	items, err := repo.GetAll(repo.URL+"/labels", []*Label{})
 	if err != nil {
 		return nil, err
 	}
@@ -390,7 +493,7 @@ func (repo *Repository) GetIssues(query string) ([]*Issue, error) {
 		url += "?" + query
 	}
 
-	items, err := GetAll(url, []*Issue{})
+	items, err := repo.GetAll(url, []*Issue{})
 	if err != nil {
 		return nil, err
 	}
@@ -403,7 +506,7 @@ func (repo *Repository) GetMilestones(query string) ([]*Milestone, error) {
 		url += "?" + query
 	}
 
-	items, err := GetAll(url, []*Milestone{})
+	items, err := repo.GetAll(url, []*Milestone{})
 	if err != nil {
 		return nil, err
 	}
@@ -411,48 +514,49 @@ func (repo *Repository) GetMilestones(query string) ([]*Milestone, error) {
 }
 
 // /repos/:owner/:repo/issues/:issue_number
-func GetMilestone(url string) (*Milestone, error) {
-	res, err := Git("GET", url, "")
+func (gh *GitHubClient) GetMilestone(url string) (*Milestone, error) {
+	res, err := gh.Git("GET", url, "")
 	if err != nil {
 		return nil, err
 	}
 
 	milestone := Milestone{}
-	if err = json.Unmarshal([]byte(res.Body), &milestone); err != nil {
+	if err = json.Unmarshal(res.Body, &milestone); err != nil {
 		return nil, err
 	}
-
+	milestone.SetGH(gh)
 	return &milestone, nil
 }
 
 func (milestone *Milestone) Refresh() error {
-	newMile, err := GetMilestone(milestone.URL)
+	newMile, err := milestone.GetMilestone(milestone.URL)
 	if err != nil {
 		return err
 	}
+	newMile.SetGH(milestone.GitHubClient)
 	*milestone = Milestone{}
 	*milestone = *newMile
+
 	return nil
 }
 
-// Static methods
-
-func GetRepository(org string, name string) (*Repository, error) {
-	res, err := Git("GET", "/repos/"+org+"/"+name, "")
+func (gh *GitHubClient) GetRepository(org string, name string) (*Repository, error) {
+	res, err := gh.Git("GET", "/repos/"+org+"/"+name, "")
 	if err != nil {
 		return nil, err
 	}
 
 	repo := Repository{}
-	if err = json.Unmarshal([]byte(res.Body), &repo); err != nil {
+	if err = json.Unmarshal(res.Body, &repo); err != nil {
 		return nil, err
 	}
+	repo.SetGH(gh)
 
 	return &repo, nil
 }
 
-func SetIssueMilestone(org string, repo string, num int, newMile string) (*Issue, error) {
-	items, err := GetAll("/repos/"+org+"/"+repo+"/milestones",
+func (gh *GitHubClient) SetIssueMilestone(org string, repo string, num int, newMile string) (*Issue, error) {
+	items, err := gh.GetAll("/repos/"+org+"/"+repo+"/milestones",
 		[]*Milestone{})
 	if err != nil {
 		return nil, err
@@ -461,6 +565,7 @@ func SetIssueMilestone(org string, repo string, num int, newMile string) (*Issue
 
 	mileNum := -1
 	for _, mile := range milestones {
+		mile.SetGH(gh)
 		if mile.Title == newMile {
 			mileNum = mile.Number
 		}
@@ -471,81 +576,100 @@ func SetIssueMilestone(org string, repo string, num int, newMile string) (*Issue
 	}
 
 	url := fmt.Sprintf("/repos/%s/%s/issues/%d", org, repo, num)
-	res, err := Git("PATCH", url, fmt.Sprintf(`{"milestone": %d}`, mileNum))
+	res, err := gh.Git("PATCH", url, fmt.Sprintf(`{"milestone": %d}`, mileNum))
 	if err != nil {
 		return nil, err
 	}
 
 	issue := Issue{}
-	if err = json.Unmarshal([]byte(res.Body), &issue); err != nil {
+	if err = json.Unmarshal(res.Body, &issue); err != nil {
 		return nil, err
 	}
+	issue.SetGH(gh)
 
 	return &issue, nil
 }
 
-func GetRepositoryMilestones(org string, repo string) ([]*Milestone, error) {
-	items, err := GetAll("/repos/"+org+"/"+repo+"/milestones", []*Milestone{})
+func (gh *GitHubClient) GetRepositoryMilestones(org string, repo string) ([]*Milestone, error) {
+	items, err := gh.GetAll("/repos/"+org+"/"+repo+"/milestones", []*Milestone{})
 	if err != nil {
 		return nil, err
 	}
-	return items.([]*Milestone), nil
+	milestones := items.([]*Milestone)
+	for _, mile := range milestones {
+		mile.SetGH(gh)
+	}
+	return milestones, nil
 }
 
 // /repos/:owner/:repo/issues/:issue_number
-func GetIssue(url string) (*Issue, error) {
-	res, err := Git("GET", url, "")
+func (gh *GitHubClient) GetIssue(url string) (*Issue, error) {
+	res, err := gh.Git("GET", url, "")
 	if err != nil {
 		return nil, err
 	}
 
 	issue := Issue{}
-	if err = json.Unmarshal([]byte(res.Body), &issue); err != nil {
+	if err = json.Unmarshal(res.Body, &issue); err != nil {
 		return nil, err
 	}
+	issue.SetGH(gh)
 
 	return &issue, nil
 }
 
-func GetIssueParts(org string, repo string, num int) (*Issue, error) {
+func (gh *GitHubClient) GetIssueParts(org string, repo string, num int) (*Issue, error) {
 	url := fmt.Sprintf("/repos/%s/%s/issues/%d", org, repo, num)
-	return GetIssue(url)
+	return gh.GetIssue(url)
 }
 
-func GetIssuesParts(org string, repo string, query string) ([]*Issue, error) {
+func (gh *GitHubClient) GetIssuesParts(org string, repo string, query string) ([]*Issue, error) {
 	url := fmt.Sprintf("/repos/%s/%s/issues", org, repo)
 	if query != "" {
 		url += "?" + query
 	}
-	items, err := GetAll(url, []*Issue{})
+	items, err := gh.GetAll(url, []*Issue{})
 	if err != nil {
 		return nil, err
 	}
-	return items.([]*Issue), nil
+
+	issues := items.([]*Issue)
+	for _, issue := range issues {
+		issue.SetGH(gh)
+	}
+	return issues, nil
 }
 
-func GetMilestones(org string, repo string, query string) ([]*Milestone, error) {
+func (gh *GitHubClient) GetMilestones(org string, repo string, query string) ([]*Milestone, error) {
 	url := fmt.Sprintf("/repos/%s/%s/milestones", org, repo)
 	if query != "" {
 		url += "?" + query
 	}
-	items, err := GetAll(url, []*Milestone{})
+	items, err := gh.GetAll(url, []*Milestone{})
 	if err != nil {
 		return nil, err
 	}
-	return items.([]*Milestone), nil
+	milestones := items.([]*Milestone)
+	for _, mile := range milestones {
+		mile.SetGH(gh)
+	}
+	return milestones, nil
 }
 
-func GetRepositoryTeams(org string, repo string) ([]*Team, error) {
-	items, err := GetAll("/repos/"+org+"/"+repo+"/teams", []*Label{})
+func (gh *GitHubClient) GetRepositoryTeams(org string, repo string) ([]*Team, error) {
+	items, err := gh.GetAll("/repos/"+org+"/"+repo+"/teams", []*Label{})
 	if err != nil {
 		return nil, err
 	}
-	return items.([]*Team), nil
+	teams := items.([]*Team)
+	for _, team := range teams {
+		team.SetGH(gh)
+	}
+	return teams, nil
 }
 
-func IsUserInOrganization(org string, user string) (bool, error) {
-	_, err := Git("GET", "/orgs/"+org+"/public_members/"+user, "")
+func (gh *GitHubClient) IsUserInOrganization(org string, user string) (bool, error) {
+	_, err := gh.Git("GET", "/orgs/"+org+"/public_members/"+user, "")
 	if err != nil {
 		return false, err
 	}
@@ -610,9 +734,13 @@ func (gd *GitData) SetData(label string, text string) {
 }
 
 func (issue *Issue) GetGitData() *GitData {
+	return ParseForGitData(issue.Body)
+}
+
+func ParseForGitData(comment string) *GitData {
 	data := &GitData{}
 
-	lines := strings.Split(issue.Body, "\n")
+	lines := strings.Split(comment, "\n")
 	for _, line := range lines {
 		// **_Title_**: text
 		i := strings.Index(line, "_**: ")
@@ -728,17 +856,33 @@ func (issue *Issue) SetGitData(data *GitData) error {
 }
 
 func (issue *Issue) GetRepository() (*Repository, error) {
-	res, err := Git("GET", issue.Repository_URL, "")
+	res, err := issue.Git("GET", issue.Repository_URL, "")
 	if err != nil {
 		return nil, err
 	}
 
 	repo := Repository{}
-	if err = json.Unmarshal([]byte(res.Body), &repo); err != nil {
+	if err = json.Unmarshal(res.Body, &repo); err != nil {
+		return nil, err
+	}
+	repo.SetGH(issue.GitHubClient)
+
+	return &repo, nil
+}
+
+func (repo *Repository) GetFile(path string) ([]byte, error) {
+	url := fmt.Sprintf("%s/contents/%s", repo.URL, path)
+
+	res, err := repo.Git("GET", url, "")
+	if res != nil && res.StatusCode == 404 {
+		return nil, fmt.Errorf("File not found: %s", path)
+	}
+
+	if err != nil {
 		return nil, err
 	}
 
-	return &repo, nil
+	return res.Body, nil
 }
 
 func (issue *Issue) MoveToRepository(repoName string) error {
@@ -747,7 +891,7 @@ func (issue *Issue) MoveToRepository(repoName string) error {
 		return err
 	}
 
-	newRepo, err := GetRepository(oldRepo.Owner.Login, repoName)
+	newRepo, err := issue.GitHubClient.GetRepository(oldRepo.Owner.Login, repoName)
 	if err != nil {
 		return err
 	}
@@ -763,7 +907,7 @@ mutation {
 }
 `, issue.Node_ID, newRepo.Node_ID)
 
-	res, err := GraphQL(cmd)
+	res, err := issue.GraphQL(cmd)
 	if err != nil {
 		return err
 	}

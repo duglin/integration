@@ -12,20 +12,20 @@ import (
 	"strings"
 )
 
-var AhaToken = ""
-var AhaURL = ""
-var AhaSecret = "" // used to verify events are from Aha
-
 type AhaResponse struct {
 	StatusCode int
 	Body       string
 	PageInfo   Pagination
 }
 
-func Aha(method string, url string, body string) (*AhaResponse, error) {
-	defer fmt.Printf("\n")
-	fmt.Printf("%s %s", method, url)
+func (ac *AhaClient) Aha(method string, url string, body string) (*AhaResponse, error) {
+	// defer fmt.Printf("\n")
+	// fmt.Printf("%s %s", method, url)
 	ahaResponse := AhaResponse{}
+
+	if ac.Token == "" {
+		return nil, fmt.Errorf("Missing Aha Token, perhaps .ahaToken is missing?")
+	}
 
 	buf := []byte{}
 	if body != "" {
@@ -36,7 +36,7 @@ func Aha(method string, url string, body string) (*AhaResponse, error) {
 		return nil, err
 	}
 
-	req.Header.Add("Authorization", "Bearer "+AhaToken)
+	req.Header.Add("Authorization", "Bearer "+ac.Token)
 	req.Header.Add("Content-Type", "application/json")
 
 	tr := &http.Transport{
@@ -51,7 +51,7 @@ func Aha(method string, url string, body string) (*AhaResponse, error) {
 	buf, _ = ioutil.ReadAll(res.Body)
 
 	ahaResponse.StatusCode = res.StatusCode
-	fmt.Printf(" - %d", res.StatusCode)
+	// fmt.Printf(" - %d", res.StatusCode)
 
 	if len(buf) > 0 {
 		rawMap := map[string]json.RawMessage{} // interface{}{}
@@ -89,7 +89,7 @@ func Aha(method string, url string, body string) (*AhaResponse, error) {
 	return &ahaResponse, nil
 }
 
-func GetAll(daURL string, daItem interface{}) (interface{}, error) {
+func (ac *AhaClient) GetAll(daURL string, daItem interface{}) (interface{}, error) {
 	size := 0 // unlimited
 
 	URL, err := url.Parse(daURL)
@@ -111,7 +111,7 @@ func GetAll(daURL string, daItem interface{}) (interface{}, error) {
 	for daURL != "" {
 		var res *AhaResponse
 		var err error
-		if res, err = Aha("GET", daURL, ""); err != nil {
+		if res, err = ac.Aha("GET", daURL, ""); err != nil {
 			return nil, err
 		}
 
@@ -145,10 +145,8 @@ func GetAll(daURL string, daItem interface{}) (interface{}, error) {
 }
 
 func (product *Product) GetFeatures() ([]*Feature, error) {
-	fmt.Printf("getting features\n")
-	items, err := GetAll(AhaURL+"/api/v1/products/"+product.ID+"/features?fields=*",
+	items, err := product.GetAll(product.AhaClient.URL+"/api/v1/products/"+product.ID+"/features?fields=*",
 		[]*Feature{})
-	fmt.Printf("done\n")
 	if err != nil {
 		return nil, err
 	}
@@ -156,6 +154,7 @@ func (product *Product) GetFeatures() ([]*Feature, error) {
 	features := items.([]*Feature)
 
 	for _, f := range features {
+		f.AhaClient = product.AhaClient
 		f.Product = product
 	}
 
@@ -171,10 +170,8 @@ func (product *Product) GetFeaturesByReleaseName(name string) ([]*Feature, error
 		return nil, fmt.Errorf("Can't find Aha release %q", name)
 	}
 
-	fmt.Printf("getting features by name: %s\n", name)
-	items, err := GetAll(AhaURL+"/api/v1/releases/"+rel.ID+"/features?fields=*",
+	items, err := product.GetAll(product.AhaClient.URL+"/api/v1/releases/"+rel.ID+"/features?fields=*",
 		[]*Feature{})
-	fmt.Printf("done\n")
 	if err != nil {
 		return nil, err
 	}
@@ -182,6 +179,7 @@ func (product *Product) GetFeaturesByReleaseName(name string) ([]*Feature, error
 	features := items.([]*Feature)
 
 	for _, f := range features {
+		f.AhaClient = product.AhaClient
 		f.Product = product
 	}
 
@@ -189,9 +187,8 @@ func (product *Product) GetFeaturesByReleaseName(name string) ([]*Feature, error
 }
 
 func (product *Product) GetFeatureByID(id string) (*Feature, error) {
-	fmt.Printf("getting features: %s\n", id)
-
-	res, err := Aha("GET", AhaURL+"/api/v1/features/"+id, "")
+	res, err := product.Aha("GET",
+		product.AhaClient.URL+"/api/v1/features/"+id, "")
 	if err != nil {
 		return nil, err
 	}
@@ -202,6 +199,7 @@ func (product *Product) GetFeatureByID(id string) (*Feature, error) {
 		return nil, err
 	}
 
+	f.Feature.AhaClient = product.AhaClient
 	f.Feature.Product = product
 
 	return &f.Feature, err
@@ -228,10 +226,9 @@ func (product *Product) CreateFeature(title string, relName string, desc string)
 		`"workflow_status":{"name":"%s"}}}`,
 		title, desc, "Under consideration")
 
-	fmt.Printf("Data: %s\n", data)
-
-	res, err := Aha("POST", AhaURL+"/api/v1/releases/"+rel.Reference_Num+
-		"/features", data)
+	res, err := product.Aha("POST",
+		product.AhaClient.URL+"/api/v1/releases/"+rel.Reference_Num+
+			"/features", data)
 	if err != nil {
 		return nil, fmt.Errorf("Error creating Aha feature: %s", err)
 	}
@@ -242,13 +239,15 @@ func (product *Product) CreateFeature(title string, relName string, desc string)
 		return nil, err
 	}
 
+	f.Feature.AhaClient = product.AhaClient
 	f.Feature.Product = product
 
 	return &f.Feature, nil
 }
 
 func (product *Product) GetReleases() ([]*Release, error) {
-	items, err := GetAll(AhaURL+"/api/v1/products/"+product.ID+"/releases?fields=*",
+	items, err := product.GetAll(
+		product.AhaClient.URL+"/api/v1/products/"+product.ID+"/releases?fields=*",
 		[]*Release{})
 	if err != nil {
 		return nil, err
@@ -257,6 +256,7 @@ func (product *Product) GetReleases() ([]*Release, error) {
 	rels := items.([]*Release)
 
 	for _, r := range rels {
+		r.AhaClient = product.AhaClient
 		r.Product = product
 	}
 
@@ -264,9 +264,8 @@ func (product *Product) GetReleases() ([]*Release, error) {
 }
 
 func (product *Product) GetReleaseByID(id string) (*Release, error) {
-	fmt.Printf("getting release: %s\n", id)
-
-	res, err := Aha("GET", AhaURL+"/api/v1/releases/"+id, "")
+	res, err := product.Aha("GET",
+		product.AhaClient.URL+"/api/v1/releases/"+id, "")
 	if err != nil {
 		return nil, err
 	}
@@ -277,14 +276,13 @@ func (product *Product) GetReleaseByID(id string) (*Release, error) {
 		return nil, err
 	}
 
+	r.Release.AhaClient = product.AhaClient
 	r.Release.Product = product
 
 	return &r.Release, err
 }
 
 func (product *Product) GetReleaseByName(name string) (*Release, error) {
-	fmt.Printf("getting release: %s\n", name)
-
 	rels, err := product.GetReleases()
 	if err != nil {
 		return nil, err
@@ -292,6 +290,7 @@ func (product *Product) GetReleaseByName(name string) (*Release, error) {
 
 	for _, r := range rels {
 		if r.Name == name {
+			r.AhaClient = product.AhaClient
 			return r, nil
 		}
 	}
@@ -306,14 +305,13 @@ func (product *Product) CreateRelease(name string, date string) error {
 		Release_Date: date,
 	}
 
-	fmt.Printf("Data: %#v\n", data)
-
 	body, err := json.Marshal(data)
 	if err != nil {
 		return err
 	}
 
-	_, err = Aha("POST", AhaURL+"/api/v1/products/"+product.ID+"/releases",
+	_, err = product.Aha("POST",
+		product.AhaClient.URL+"/api/v1/products/"+product.ID+"/releases",
 		string(body))
 
 	return err
@@ -321,9 +319,8 @@ func (product *Product) CreateRelease(name string, date string) error {
 
 /*
 func (product *Product) GetEpic(id string) (*Epic, error) {
-	fmt.Printf("getting epic: %s\n", id)
-
-	res, err := Aha("GET", AhaURL+"/api/v1/epics/"+id, "")
+	res, err := product.Aha("GET",
+		product.AhaClient.URL+"/api/v1/epics/"+id, "")
 	if err != nil {
 		return nil, err
 	}
@@ -334,6 +331,7 @@ func (product *Product) GetEpic(id string) (*Epic, error) {
 		return nil, err
 	}
 
+	e.Epic.AhaClient = product.AhaClient
 	e.Epic.Product = product
 
 	return &e.Epic, err
@@ -341,31 +339,35 @@ func (product *Product) GetEpic(id string) (*Epic, error) {
 */
 
 func (product *Product) GetCustomObjectRecord(id string) (*Custom_Object_Record, error) {
-	fmt.Printf("getting custom objects\n")
-
 	// "{\"custom_object_record\":{\"id\":\"6880577663870072105\",\"product_id\":\"6424448796653305601\",\"key\":\"customer_2\",\"created_at\":\"2020-10-06T18:35:26.188Z\",\"updated_at\":\"2020-10-07T19:30:08.034Z\",\"custom_fields\":[{\"key\":\"customer_2_name\",\"name\":\"Name\",\"value\":\"Gartner - B8\",\"type\":\"string\"},{\"key\":\"customer_2_contact\",\"name\":\"Primary customer contact\",\"value\":\"Brett Walters\",\"type\":\"string\"},{\"key\":\"customer_2_phone\",\"name\":\"Phone number\",\"value\":\"\",\"type\":\"string\"},{\"key\":\"customer_2_email
 
-	Aha("GET", AhaURL+"/api/v1/products/"+product.ID+"/custom_objects/customer_2/records", "")
-	Aha("GET", AhaURL+"/api/v1/products/"+product.ID+"/custom_objects/public_cloud_customer_from_list/records", "")
-	Aha("GET", AhaURL+"/api/v1/products/"+product.ID+"/custom_objects/public_cloud_customer_from_list", "")
-	Aha("GET", AhaURL+"/api/v1/custom_object_records/public_cloud_customer_from_list", "")
-	res, _ := Aha("GET", AhaURL+"/api/v1/custom_object_records/6858965262405902740", "")
+	product.Aha("GET",
+		product.AhaClient.URL+"/api/v1/products/"+product.ID+"/custom_objects/customer_2/records", "")
+	product.Aha("GET",
+		product.AhaClient.URL+"/api/v1/products/"+product.ID+"/custom_objects/public_cloud_customer_from_list/records", "")
+	product.Aha("GET",
+		product.AhaClient.URL+"/api/v1/products/"+product.ID+"/custom_objects/public_cloud_customer_from_list", "")
+	product.Aha("GET",
+		product.AhaClient.URL+"/api/v1/custom_object_records/public_cloud_customer_from_list", "")
+	res, _ := product.Aha("GET",
+		product.AhaClient.URL+"/api/v1/custom_object_records/6858965262405902740", "")
 	if res.Body != "" {
 		fmt.Printf("%s\n", res.Body)
 	}
 
-	res, err := Aha("GET", AhaURL+"/api/v1/custom_object_records/"+id, "")
+	res, err := product.Aha("GET",
+		product.AhaClient.URL+"/api/v1/custom_object_records/"+id, "")
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Printf("\n\n%s\n\n", res.Body)
 	record := struct{ Custom_Object_Record *Custom_Object_Record }{}
 	err = json.Unmarshal([]byte(res.Body), &record)
 	if err != nil {
 		return nil, err
 	}
 
+	record.Custom_Object_Record.AhaClient = product.AhaClient
 	return record.Custom_Object_Record, err
 }
 
@@ -375,13 +377,15 @@ func (feature *Feature) Refresh() error {
 		return err
 	}
 
+	f.AhaClient = feature.AhaClient
 	f.Product = feature.Product
 	*feature = *f
 	return nil
 }
 
 func (feature *Feature) Delete() (bool, error) {
-	res, err := Aha("DELETE", AhaURL+"/api/v1/features/"+feature.Reference_Num, "")
+	res, err := feature.Aha("DELETE",
+		feature.AhaClient.URL+"/api/v1/features/"+feature.Reference_Num, "")
 	if err == nil {
 		return true, nil
 	}
@@ -390,7 +394,8 @@ func (feature *Feature) Delete() (bool, error) {
 		return true, nil
 	}
 
-	return false, fmt.Errorf("Error deleting feature %q: %s", feature.Reference_Num, err)
+	return false, fmt.Errorf("Error deleting feature %q: %s",
+		feature.Reference_Num, err)
 }
 
 func (feature *Feature) SetReleaseByID(id string) error {
@@ -398,7 +403,8 @@ func (feature *Feature) SetReleaseByID(id string) error {
 	id = string(buf)
 
 	body := fmt.Sprintf(`{"feature":{"release":%s}}`, id)
-	_, err := Aha("PUT", AhaURL+"/api/v1/features/"+feature.Reference_Num, body)
+	_, err := feature.Aha("PUT",
+		feature.AhaClient.URL+"/api/v1/features/"+feature.Reference_Num, body)
 	if err != nil {
 		err = fmt.Errorf("Error moving Feature %q to release %q",
 			feature.Reference_Num, id, err)
@@ -438,12 +444,12 @@ func (feature *Feature) SetGitURL(url string) error {
 	body := `{"feature":{"custom_fields":{"ghe_url":%s}}}`
 	body = fmt.Sprintf(body, url)
 
-	res, err := Aha("PUT", AhaURL+"/api/v1/features/"+feature.Reference_Num, body)
+	_, err := feature.Aha("PUT",
+		feature.AhaClient.URL+"/api/v1/features/"+feature.Reference_Num, body)
 	if err != nil {
 		err = fmt.Errorf("Error setting Aha feature(%s) GitURL: %s",
 			feature.Reference_Num, url)
 	}
-	fmt.Printf("res: %s\n", res.Body)
 
 	return err
 }
@@ -454,7 +460,8 @@ func (feature *Feature) SetName(name string) error {
 
 	body := fmt.Sprintf(`{"feature":{"name":%s}}`, name)
 
-	_, err := Aha("PUT", AhaURL+"/api/v1/features/"+feature.Reference_Num, body)
+	_, err := feature.Aha("PUT",
+		feature.AhaClient.URL+"/api/v1/features/"+feature.Reference_Num, body)
 	if err != nil {
 		err = fmt.Errorf("Error updating Aha feature(%s) title: %s",
 			feature.Reference_Num, name)
@@ -469,7 +476,8 @@ func (feature *Feature) SetStatus(status string) error {
 
 	body := fmt.Sprintf(`{"feature":{"workflow_status":{"name":%s}}}`, status)
 
-	_, err := Aha("PUT", AhaURL+"/api/v1/features/"+feature.Reference_Num, body)
+	_, err := feature.Aha("PUT",
+		feature.AhaClient.URL+"/api/v1/features/"+feature.Reference_Num, body)
 	if err != nil {
 		err = fmt.Errorf("Error updating Aha feature(%s) status: %s",
 			feature.Reference_Num, status)
@@ -484,13 +492,23 @@ func (feature *Feature) SetDueDate(date string) error {
 
 	body := fmt.Sprintf(`{"feature":{"due_date":%s}}`, date)
 
-	_, err := Aha("PUT", AhaURL+"/api/v1/features/"+feature.Reference_Num, body)
+	_, err := feature.Aha("PUT",
+		feature.AhaClient.URL+"/api/v1/features/"+feature.Reference_Num, body)
 	if err != nil {
 		err = fmt.Errorf("Error updating Aha feature(%s) end_date: %s",
 			feature.Reference_Num, date)
 	}
 
 	return err
+}
+
+func (feature *Feature) HasTag(tag string) bool {
+	for _, t := range feature.Tags {
+		if t == tag {
+			return true
+		}
+	}
+	return false
 }
 
 func (feature *Feature) AddTag(tag string) error {
@@ -504,7 +522,8 @@ func (feature *Feature) AddTag(tag string) error {
 	buf, _ := json.Marshal(feature.Tags)
 	body := fmt.Sprintf(`{"feature":{"tags":%s}}`, string(buf))
 
-	res, err := Aha("PUT", AhaURL+"/api/v1/features/"+feature.Reference_Num, body)
+	res, err := feature.Aha("PUT",
+		feature.AhaClient.URL+"/api/v1/features/"+feature.Reference_Num, body)
 	if err != nil {
 		return fmt.Errorf("Error adding tag %q: %s", tag, err)
 	}
@@ -515,6 +534,7 @@ func (feature *Feature) AddTag(tag string) error {
 		return err
 	}
 
+	f.Feature.AhaClient = feature.AhaClient
 	f.Feature.Product = feature.Product
 	*feature = f.Feature
 	return nil
@@ -536,7 +556,8 @@ func (feature *Feature) RemoveTag(tag string) error {
 	buf, _ := json.Marshal(feature.Tags)
 	body := fmt.Sprintf(`{"feature":{"tags":%s}}`, string(buf))
 
-	res, err := Aha("PUT", AhaURL+"/api/v1/features/"+feature.Reference_Num, body)
+	res, err := feature.Aha("PUT",
+		feature.AhaClient.URL+"/api/v1/features/"+feature.Reference_Num, body)
 	if err != nil {
 		return fmt.Errorf("Error removing tag %q: %s", tag, err)
 	}
@@ -547,13 +568,108 @@ func (feature *Feature) RemoveTag(tag string) error {
 		return err
 	}
 
+	f.Feature.AhaClient = feature.AhaClient
 	f.Feature.Product = feature.Product
 	*feature = f.Feature
 	return nil
 }
 
+func (feature *Feature) GetCustomField(name string) (string, bool) {
+	for _, c := range feature.Custom_Fields {
+		if c.Name == name {
+			if c.Type == "url" {
+				return c.Value.(string), true
+			} else if c.Type == "note" {
+				return strings.TrimSpace(c.Value.(string)), true
+			}
+			break
+		}
+	}
+	return "", false
+}
+func (feature *Feature) HasCustomFieldValue(name, value string) bool {
+	// fmt.Printf("%v -> hasCust: %s %s\n", feature.Reference_Num, name, value)
+	for _, sd := range feature.Product.Screen_Definitions {
+		if sd.Screenable_Type != "Feature" {
+			continue
+		}
+
+		for _, cfd := range sd.Custom_Field_Definitions {
+			// Allow Name to be the real name or the key
+			if cfd.Name != name && cfd.Key != name {
+				continue
+			}
+			// Use the 'key' from this point on
+			key := cfd.Key
+
+			if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::UrlField") {
+				if cfd.API_Type == "url" {
+					val := "..."
+					return val == value
+				} else {
+					fmt.Printf("Unsupported cfd: %s looking for %s", cfd.API_Type, name)
+					return false
+				}
+			} else if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::LinkMany") {
+				if cfd.API_Type == "array" {
+					// Find 'option' that has the key
+					ID := ""
+					for _, opt := range cfd.Options {
+						if opt.Label == value {
+							ID = opt.ID
+							break
+						}
+					}
+					if ID == "" {
+						fmt.Printf("1- Can't find %s/%q as a valid option\n", name, value)
+						return false
+					}
+
+					// Get existing values
+					for _, col := range feature.Custom_Object_Links {
+						if col.Key == key {
+							for _, rec := range col.Record_IDs {
+								if rec == ID {
+									// Already there, so just exit
+									return true
+								}
+							}
+							break
+						}
+					}
+					return false
+				} else {
+					fmt.Printf("Unsupported cfd-link: %s", cfd.API_Type)
+					return false
+				}
+			} else if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::SelectConstant") {
+				if cfd.API_Type == "string" {
+					for _, cf := range feature.Custom_Fields {
+						if cf.Key == key {
+							return cf.Value == value
+						}
+					}
+					return false
+				}
+				break
+			} else if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::NoteField") {
+				if cfd.API_Type == "note" {
+					for _, cf := range feature.Custom_Fields {
+						if cf.Key == key {
+							return cf.Value == value
+						}
+					}
+					return false
+				}
+				break
+			}
+		}
+	}
+	return false
+}
+
 func (feature *Feature) AddCustomFieldValue(name, value string) error {
-	fmt.Printf("Feature.addfield %q.%q - %q\n", feature.Reference_Num, name, value)
+	// fmt.Printf("Feature.addfield %q.%q - %q\n", feature.Reference_Num, name, value)
 	/*
 	   "Custom_Object_Links": [
 	     {
@@ -573,7 +689,6 @@ func (feature *Feature) AddCustomFieldValue(name, value string) error {
 		if sd.Screenable_Type != "Feature" {
 			continue
 		}
-		fmt.Printf("Got feature list\n")
 
 		for _, cfd := range sd.Custom_Field_Definitions {
 			// Allow Name to be the real name or the key
@@ -601,7 +716,7 @@ func (feature *Feature) AddCustomFieldValue(name, value string) error {
 						}
 					}
 					if ID == "" {
-						return fmt.Errorf("Can't find %q as a valid option", value)
+						return fmt.Errorf("3- Can't find %s/%q as a valid option\n", name, value)
 					}
 
 					values := []string{}
@@ -634,6 +749,7 @@ func (feature *Feature) AddCustomFieldValue(name, value string) error {
 				} else {
 					return fmt.Errorf("Unsupported cfd-link: %s", cfd.API_Type)
 				}
+				break
 			} else if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::SelectConstant") {
 				if cfd.API_Type == "string" {
 					// Find 'option' that has the key
@@ -645,7 +761,7 @@ func (feature *Feature) AddCustomFieldValue(name, value string) error {
 						}
 					}
 					if ID == "" {
-						return fmt.Errorf("Can't find %q as a valid option", value)
+						return fmt.Errorf("4- Can't find %s/%q as a valid option\n", name, value)
 					}
 
 					// Get existing values
@@ -672,12 +788,21 @@ func (feature *Feature) AddCustomFieldValue(name, value string) error {
 					body = string(buf)
 				}
 				break
+			} else if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::NoteField") {
+				if cfd.API_Type == "note" {
+					body = `{"feature":{"custom_fields":{"%s":"%s"}}}`
+					body = fmt.Sprintf(body, key, value)
+				} else {
+					return fmt.Errorf("Unsupported cfd: %s", cfd.API_Type)
+				}
+				break
 			}
 		}
 	}
 
 	if body != "" {
-		res, err := Aha("PUT", AhaURL+"/api/v1/features/"+feature.Reference_Num, body)
+		res, err := feature.Aha("PUT",
+			feature.AhaClient.URL+"/api/v1/features/"+feature.Reference_Num, body)
 		if err != nil {
 			return fmt.Errorf("Error setting feature(%s) field: %q to %q. %s",
 				feature.Reference_Num, name, value, res.StatusCode, err.Error())
@@ -688,6 +813,7 @@ func (feature *Feature) AddCustomFieldValue(name, value string) error {
 			return err
 		}
 
+		f.Feature.AhaClient = feature.AhaClient
 		f.Feature.Product = feature.Product
 		*feature = f.Feature
 	} else {
@@ -698,7 +824,7 @@ func (feature *Feature) AddCustomFieldValue(name, value string) error {
 }
 
 func (feature *Feature) RemoveCustomFieldValue(name, value string) error {
-	fmt.Printf("Feature.removefield %q.%q - %q\n", feature.Reference_Num, name, value)
+	// fmt.Printf("Feature.removefield %q.%q - %q\n", feature.Reference_Num, name, value)
 	body := ""
 
 	for _, sd := range feature.Product.Screen_Definitions {
@@ -731,7 +857,7 @@ func (feature *Feature) RemoveCustomFieldValue(name, value string) error {
 						}
 					}
 					if ID == "" {
-						return fmt.Errorf("Can't find %q as a valid option", value)
+						return fmt.Errorf("5- Can't find %s/%q as a valid option\n", name, value)
 					}
 
 					values := []string{}
@@ -788,6 +914,22 @@ func (feature *Feature) RemoveCustomFieldValue(name, value string) error {
 					body = string(buf)
 				}
 				break
+			} else if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::NoteField") {
+				if cfd.API_Type == "note" {
+					body = `{"feature":{"custom_fields":{"` + key + `":"-"}}}`
+					/*
+						req := struct {
+							Feature struct {
+								Custom_Fields map[string]string `json:"custom_fields"`
+							} `json:"feature"`
+						}{}
+						req.Feature.Custom_Fields = map[string]string{}
+						req.Feature.Custom_Fields[key] = " "
+						buf, _ := json.MarshalIndent(req, "", "  ")
+						body = string(buf)
+					*/
+				}
+				break
 			}
 			break
 		}
@@ -795,7 +937,8 @@ func (feature *Feature) RemoveCustomFieldValue(name, value string) error {
 
 	if body != "" {
 		// fmt.Printf("body: %s\n", body)
-		res, err := Aha("PUT", AhaURL+"/api/v1/features/"+feature.Reference_Num, body)
+		res, err := feature.Aha("PUT",
+			feature.AhaClient.URL+"/api/v1/features/"+feature.Reference_Num, body)
 		if err != nil {
 			return fmt.Errorf("Error setting feature(%s) field: %q to %q. %s",
 				feature.Reference_Num, name, value, res.StatusCode, err.Error())
@@ -806,6 +949,7 @@ func (feature *Feature) RemoveCustomFieldValue(name, value string) error {
 			return err
 		}
 
+		f.Feature.AhaClient = feature.AhaClient
 		f.Feature.Product = feature.Product
 		*feature = f.Feature
 	} else {
@@ -817,16 +961,20 @@ func (feature *Feature) RemoveCustomFieldValue(name, value string) error {
 
 // Global funcs
 
-func GetProducts() ([]*Product, error) {
-	items, err := GetAll(AhaURL+"/api/v1/products?fields=*", []*Product{})
+func (ac *AhaClient) GetProducts() ([]*Product, error) {
+	items, err := ac.GetAll(ac.URL+"/api/v1/products?fields=*", []*Product{})
 	if err != nil {
 		return nil, err
 	}
-	return items.([]*Product), err
+	products := items.([]*Product)
+	for _, p := range products {
+		p.AhaClient = ac
+	}
+	return products, err
 }
 
-func GetProduct(id string) (*Product, error) {
-	res, err := Aha("GET", AhaURL+"/api/v1/products/"+id, "")
+func (ac *AhaClient) GetProduct(id string) (*Product, error) {
+	res, err := ac.Aha("GET", ac.URL+"/api/v1/products/"+id, "")
 	if err != nil {
 		return nil, err
 	}
@@ -836,12 +984,13 @@ func GetProduct(id string) (*Product, error) {
 	if err != nil {
 		return nil, err
 	}
+	p.Product.AhaClient = ac
 
 	return &p.Product, nil
 }
 
-func DeleteFeature(id string) (bool, error) {
-	res, err := Aha("DELETE", AhaURL+"/api/v1/features/"+id, "")
+func (ac *AhaClient) DeleteFeature(id string) (bool, error) {
+	res, err := ac.Aha("DELETE", ac.URL+"/api/v1/features/"+id, "")
 	if err == nil {
 		return true, nil
 	}

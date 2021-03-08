@@ -2,6 +2,20 @@ package aha
 
 // https://www.aha.io/api
 
+type AhaClient struct {
+	URL    string
+	Token  string
+	Secret string // used to verify events are from Aha
+}
+
+func NewAhaClient(url string, token string, secret string) *AhaClient {
+	return &AhaClient{
+		URL:    url,
+		Token:  token,
+		Secret: secret,
+	}
+}
+
 type Pagination struct {
 	Total_Records int
 	Total_Pages   int
@@ -9,6 +23,8 @@ type Pagination struct {
 }
 
 type User struct {
+	*AhaClient
+
 	ID         string
 	Name       string
 	Email      string
@@ -17,6 +33,8 @@ type User struct {
 }
 
 type Event struct {
+	*AhaClient
+
 	Event string
 	Audit struct {
 		ID           string
@@ -41,6 +59,8 @@ type Event struct {
 }
 
 type Product struct {
+	*AhaClient
+
 	ID                string
 	Reference_Prefix  string
 	Name              string
@@ -79,6 +99,8 @@ type Product struct {
 }
 
 type Feature struct {
+	*AhaClient
+
 	ID              string
 	Name            string
 	Reference_Num   string
@@ -141,6 +163,8 @@ type Feature struct {
 type Epic Feature
 
 type Release struct {
+	*AhaClient
+
 	ID                 string         `json:"id,omitempty"`
 	Reference_Num      string         `json:"reference_num,omitempty"`
 	Name               string         `json:"name,omitempty"`
@@ -159,6 +183,8 @@ type Release struct {
 }
 
 type Release_Phase struct {
+	*AhaClient
+
 	ID              string
 	Name            string
 	Start_On        string
@@ -178,6 +204,8 @@ type Release_Phase struct {
 }
 
 type Integration_Field struct {
+	*AhaClient
+
 	ID             string
 	Name           string
 	Value          string
@@ -187,6 +215,8 @@ type Integration_Field struct {
 }
 
 type Attachment struct {
+	*AhaClient
+
 	ID           string
 	Download_URL string
 	Created_At   string
@@ -197,6 +227,8 @@ type Attachment struct {
 }
 
 type Requirement struct {
+	*AhaClient
+
 	ID              string
 	Name            string
 	Reference_Num   string
@@ -222,6 +254,8 @@ type Requirement struct {
 }
 
 type Workflow_Status struct {
+	*AhaClient
+
 	ID       string
 	Name     string
 	Position int
@@ -230,6 +264,8 @@ type Workflow_Status struct {
 }
 
 type Custom_Field struct {
+	*AhaClient
+
 	Key   string
 	Name  string
 	Value interface{}
@@ -237,6 +273,8 @@ type Custom_Field struct {
 }
 
 type Custom_Object_Record struct {
+	*AhaClient
+
 	ID                  string
 	Product_ID          string
 	Key                 string
@@ -252,6 +290,8 @@ type Custom_Object_Record struct {
 }
 
 type Integration struct {
+	*AhaClient
+
 	ID             string
 	Service_Name   string
 	Name           string
@@ -265,6 +305,8 @@ type Integration struct {
 }
 
 type Project struct {
+	*AhaClient
+
 	ID               string
 	Reference_Prefix string
 	Name             string

@@ -11,18 +11,18 @@ import (
 
 // https://github.com/ZenHubIO/API
 
-var ZenToken = ""
-var ZenHubURL = ""
-var ZenSecret = ""
+func (zc *ZenHubClient) Zen(method string, url string, body string) (string, error) {
+	if zc.Token == "" {
+		return "", fmt.Errorf("Missing ZubHun Token, perhaps .zenToken is missing?")
+	}
 
-func Zen(method string, url string, body string) (string, error) {
 	buf := []byte{}
 	if body != "" {
 		buf = []byte(body)
 	}
 	req, err := http.NewRequest(method, url, bytes.NewReader(buf))
 
-	req.Header.Add("X-Authentication-Token", ZenToken)
+	req.Header.Add("X-Authentication-Token", zc.Token)
 	req.Header.Add("Content-Type", "application/json")
 
 	// fmt.Printf("*** ZEN: %s %s\n%s\n", method, url, body)
@@ -46,10 +46,10 @@ func Zen(method string, url string, body string) (string, error) {
 	return string(buf), nil
 }
 
-func GetIssue(repoID int, issueNum int) (*Issue, error) {
-	url := fmt.Sprintf("%s/p1/repositories/%d/issues/%d", ZenHubURL, repoID,
+func (zc *ZenHubClient) GetIssue(repoID int, issueNum int) (*Issue, error) {
+	url := fmt.Sprintf("%s/p1/repositories/%d/issues/%d", zc.URL, repoID,
 		issueNum)
-	res, err := Zen("GET", url, "")
+	res, err := zc.Zen("GET", url, "")
 	if err != nil {
 		return nil, err
 	}
@@ -59,47 +59,49 @@ func GetIssue(repoID int, issueNum int) (*Issue, error) {
 		fmt.Printf("json: %s\n", res)
 		return nil, err
 	}
+	issue.ZenHubClient = zc
+
 	return &issue, nil
 }
 
-func MakeEpic(repoID int, issueNum int) error {
+func (zc *ZenHubClient) MakeEpic(repoID int, issueNum int) error {
 	url := fmt.Sprintf("%s/p1/repositories/%d/issues/%d/convert_to_epic",
-		ZenHubURL, repoID, issueNum)
-	_, err := Zen("POST", url, "[]")
+		zc.URL, repoID, issueNum)
+	_, err := zc.Zen("POST", url, "[]")
 	return err
 }
 
 // POST /p2/workspaces/:workspace_id/repositories/:repo_id/issues/:issue_number/moves
-func SetIssuePipeline(workspaceID string, repoID int, issueNum int, pipelineID string) error {
+func (zc *ZenHubClient) SetIssuePipeline(workspaceID string, repoID int, issueNum int, pipelineID string) error {
 	url := fmt.Sprintf("%s/p2/workspaces/%s/repositories/%d/issues/%d/moves",
-		ZenHubURL, workspaceID, repoID, issueNum)
+		zc.URL, workspaceID, repoID, issueNum)
 	body := fmt.Sprintf(`{"pipeline_id":"%s","position":"top"}`, pipelineID)
 
-	res, err := Zen("POST", url, string(body))
+	res, err := zc.Zen("POST", url, string(body))
 	if err != nil {
 		err = fmt.Errorf("Error setting pipeline: %s\n%s", err, res)
 	}
 	return err
 }
 
-func SetIssuePipeline2(repoID int, workspace string, issueNum int, pipeline string) error {
-	board, err := GetBoard(repoID, workspace)
+func (zc *ZenHubClient) SetIssuePipeline2(repoID int, workspace string, issueNum int, pipeline string) error {
+	board, err := zc.GetBoard(repoID, workspace)
 	if err != nil {
 		return err
 	}
 
 	for _, p := range board.Pipelines {
 		if p.Name == pipeline {
-			return SetIssuePipeline(board.Workspace.ID, repoID, issueNum, p.ID)
+			return zc.SetIssuePipeline(board.Workspace.ID, repoID, issueNum, p.ID)
 		}
 	}
 
 	return fmt.Errorf("Can't find pipeline %q", pipeline)
 }
 
-func GetWorkspaces(repoID int) ([]*Workspace, error) {
-	url := fmt.Sprintf("%s/p2/repositories/%d/workspaces", ZenHubURL, repoID)
-	res, err := Zen("GET", url, "")
+func (zc *ZenHubClient) GetWorkspaces(repoID int) ([]*Workspace, error) {
+	url := fmt.Sprintf("%s/p2/repositories/%d/workspaces", zc.URL, repoID)
+	res, err := zc.Zen("GET", url, "")
 	if err != nil {
 		return nil, err
 	}
@@ -110,17 +112,21 @@ func GetWorkspaces(repoID int) ([]*Workspace, error) {
 	if err = json.Unmarshal([]byte(res), &workspaces); err != nil {
 		return nil, err
 	}
+	for _, w := range workspaces {
+		w.ZenHubClient = zc
+	}
 	return workspaces, nil
 }
 
-func GetWorkspace(repoID int, workspace string) (*Workspace, error) {
-	workspaces, err := GetWorkspaces(repoID)
+func (zc *ZenHubClient) GetWorkspace(repoID int, workspace string) (*Workspace, error) {
+	workspaces, err := zc.GetWorkspaces(repoID)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, w := range workspaces {
 		if w.Name == workspace {
+			w.ZenHubClient = zc
 			return w, nil
 		}
 	}
@@ -129,8 +135,9 @@ func GetWorkspace(repoID int, workspace string) (*Workspace, error) {
 }
 
 func (workspace *Workspace) GetBoard(repoID int) (*Board, error) {
-	url := fmt.Sprintf("%s/p2/workspaces/%s/repositories/%d/board", ZenHubURL, workspace.ID, repoID)
-	res, err := Zen("GET", url, "")
+	url := fmt.Sprintf("%s/p2/workspaces/%s/repositories/%d/board",
+		workspace.ZenHubClient.URL, workspace.ID, repoID)
+	res, err := workspace.Zen("GET", url, "")
 	if err != nil {
 		return nil, err
 	}
@@ -139,6 +146,8 @@ func (workspace *Workspace) GetBoard(repoID int) (*Board, error) {
 	if err = json.Unmarshal([]byte(res), &board); err != nil {
 		return nil, err
 	}
+	board.ZenHubClient = workspace.ZenHubClient
+
 	return &board, nil
 
 }
@@ -151,14 +160,15 @@ func (workspace *Workspace) GetPipeline(repoID int, pipeline string) (*Pipeline,
 
 	for _, p := range board.Pipelines {
 		if p.Name == pipeline {
+			p.ZenHubClient = workspace.ZenHubClient
 			return p, nil
 		}
 	}
 	return nil, nil
 }
 
-func GetBoard(repoID int, workspace string) (*Board, error) {
-	w, err := GetWorkspace(repoID, workspace)
+func (zc *ZenHubClient) GetBoard(repoID int, workspace string) (*Board, error) {
+	w, err := zc.GetWorkspace(repoID, workspace)
 	if err != nil {
 		return nil, err
 	}
@@ -171,31 +181,33 @@ func GetBoard(repoID int, workspace string) (*Board, error) {
 		return nil, err
 	}
 
+	b.ZenHubClient = zc
 	b.Workspace = w
 	b.RepoID = repoID
 
 	return b, nil
 }
 
-func GetPipeline(repoID int, workspace string, pipeline string) (*Pipeline, error) {
-	board, err := GetBoard(repoID, workspace)
+func (zc *ZenHubClient) GetPipeline(repoID int, workspace string, pipeline string) (*Pipeline, error) {
+	board, err := zc.GetBoard(repoID, workspace)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, p := range board.Pipelines {
 		if p.Name == pipeline {
+			p.ZenHubClient = zc
 			return p, nil
 		}
 	}
 	return nil, nil
 }
 
-func AddTask(epicRepoID int, epicNum int, taskRepoID int, taskNum int) error {
+func (zc *ZenHubClient) AddTask(epicRepoID int, epicNum int, taskRepoID int, taskNum int) error {
 	url := fmt.Sprintf("%s/p1/repositories/%d/epics/%d/update_issues",
-		ZenHubURL, epicRepoID, epicNum)
+		zc.URL, epicRepoID, epicNum)
 	body := fmt.Sprintf(`{"add_issues":[{"repo_id":%d,"issue_number":%d}]}`,
 		taskRepoID, taskNum)
-	_, err := Zen("POST", url, body)
+	_, err := zc.Zen("POST", url, body)
 	return err
 }

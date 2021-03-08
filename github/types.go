@@ -1,6 +1,22 @@
 package github
 
+type GitHubClient struct {
+	Host   string
+	Token  string
+	Secret string // used to verify events are from github
+}
+
+func NewGitHubClient(host string, token string, secret string) *GitHubClient {
+	return &GitHubClient{
+		Host:   host,
+		Token:  token,
+		Secret: secret,
+	}
+}
+
 type User struct {
+	*GitHubClient
+
 	Login               string
 	ID                  int
 	Node_ID             string
@@ -22,6 +38,8 @@ type User struct {
 }
 
 type Label struct {
+	*GitHubClient
+
 	ID          int
 	Node_ID     string
 	URL         string
@@ -32,6 +50,8 @@ type Label struct {
 }
 
 type Milestone struct {
+	*GitHubClient
+
 	ID            int
 	URL           string
 	HTML_URL      string
@@ -51,6 +71,8 @@ type Milestone struct {
 }
 
 type Issue struct {
+	*GitHubClient
+
 	ID                 int
 	Node_ID            string
 	URL                string
@@ -83,6 +105,8 @@ type Issue struct {
 }
 
 type Comment struct {
+	*GitHubClient
+
 	URL                string
 	HTML_URL           string
 	Issue_URL          string
@@ -96,6 +120,8 @@ type Comment struct {
 }
 
 type Repository struct {
+	*GitHubClient
+
 	ID                int
 	Node_ID           string
 	Name              string
@@ -178,6 +204,8 @@ type Repository struct {
 }
 
 type Organization struct {
+	*GitHubClient
+
 	ID                 int
 	Login              string
 	Node_ID            string
@@ -193,6 +221,8 @@ type Organization struct {
 }
 
 type Enterprise struct {
+	*GitHubClient
+
 	ID          int
 	Slug        string
 	Name        string
@@ -206,6 +236,8 @@ type Enterprise struct {
 }
 
 type Team struct {
+	*GitHubClient
+
 	ID               int
 	Node_ID          string
 	URL              string
@@ -221,6 +253,8 @@ type Team struct {
 }
 
 type Event_Issue_Comment struct {
+	*GitHubClient
+
 	Action       string
 	Sender       *User
 	Repository   *Repository
@@ -236,6 +270,8 @@ type Event_Issue_Comment struct {
 }
 
 type Event_Issues struct {
+	*GitHubClient
+
 	Action  string
 	Issue   *Issue
 	Changes struct { // only for "edited" actions
@@ -255,6 +291,8 @@ type Event_Issues struct {
 }
 
 type Event_Milestone struct {
+	*GitHubClient
+
 	Action    string
 	Milestone *Milestone
 	Changes   struct {
