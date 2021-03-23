@@ -1,5 +1,7 @@
 package github
 
+// https://docs.github.com/en/developers/webhooks-and-events/webhook-events-and-payloads
+
 type GitHubClient struct {
 	Host   string
 	Token  string
@@ -311,4 +313,8 @@ type Event_Milestone struct {
 	Installation struct {
 	}
 	Sender *User
+}
+
+type Event_Pull_Request struct {
+	*GitHubClient
 }
