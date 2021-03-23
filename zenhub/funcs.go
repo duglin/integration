@@ -43,6 +43,7 @@ func (zc *ZenHubClient) Zen(method string, url string, body string) (string, err
 		fmt.Printf("%d %s\n", res.StatusCode, string(buf))
 		return "", fmt.Errorf("Error zening: %d %s\n", res.StatusCode, string(buf))
 	}
+	// fmt.Printf("URL %s\nHeaders:%s\nBody:%s\n\n", url, res.Header, string(buf))
 	return string(buf), nil
 }
 
