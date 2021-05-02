@@ -298,6 +298,30 @@ func (product *Product) GetReleaseByName(name string) (*Release, error) {
 	return nil, nil
 }
 
+func (product *Product) CreateReleaseIfNeeded(name string, date string) error {
+	ahaRelease, err := product.GetReleaseByName(name)
+	if ahaRelease != nil || err != nil {
+		return err
+	}
+
+	data := Release{
+		// Product_ID:   product.Reference_Num,
+		Name:         name,
+		Release_Date: date,
+	}
+
+	body, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+
+	_, err = product.Aha("POST",
+		product.AhaClient.URL+"/api/v1/products/"+product.ID+"/releases",
+		string(body))
+
+	return err
+}
+
 func (product *Product) CreateRelease(name string, date string) error {
 	data := Release{
 		// Product_ID:   product.Reference_Num,
