@@ -116,6 +116,35 @@ func (e *Event_Milestone) SetGH(gh *GitHubClient) {
 	}
 }
 
+func (e *Event_Push) SetGH(gh *GitHubClient) {
+	if e != nil {
+		e.GitHubClient = gh
+		for _, c := range e.Commits {
+			c.SetGH(gh)
+		}
+		e.Pusher.SetGH(gh)
+		e.Repository.SetGH(gh)
+		e.Organization.SetGH(gh)
+		e.Enterprise.SetGH(gh)
+		e.Sender.SetGH(gh)
+		e.Head_Commit.SetGH(gh)
+	}
+}
+
+func (e *Commit) SetGH(gh *GitHubClient) {
+	if e != nil {
+		e.GitHubClient = gh
+		e.Author.SetGH(gh)
+		e.Committer.SetGH(gh)
+	}
+}
+
+func (e *MiniUser) SetGH(gh *GitHubClient) {
+	if e != nil {
+		e.GitHubClient = gh
+	}
+}
+
 type GitResponse struct {
 	StatusCode int
 	Links      map[string]string

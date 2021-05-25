@@ -144,6 +144,14 @@ func (ac *AhaClient) GetAll(daURL string, daItem interface{}) (interface{}, erro
 	return result.Interface(), nil
 }
 
+func SprintfJSON(obj interface{}) string {
+	res, err := json.MarshalIndent(obj, "", "  ")
+	if err != nil {
+		return ""
+	}
+	return string(res)
+}
+
 func (product *Product) GetFeatures() ([]*Feature, error) {
 	items, err := product.GetAll(product.AhaClient.URL+"/api/v1/products/"+product.ID+"/features?fields=*",
 		[]*Feature{})
@@ -676,6 +684,35 @@ func (feature *Feature) HasCustomFieldValue(name, value string) bool {
 					return false
 				}
 				break
+			} else if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::SelectMultipleConstant") {
+				if cfd.API_Type == "array" {
+					for _, cf := range feature.Custom_Fields {
+						if cf.Name == name {
+							if cf.Value != nil {
+								values, ok := cf.Value.([]interface{})
+								if !ok {
+									fmt.Printf("Can't convert '%#v') to []interface{}string", cf.Value)
+									return false
+								}
+								for _, val := range values {
+									v, ok := val.(string)
+									if !ok {
+										fmt.Printf("Can't convert '%#v') to string", v)
+										return false
+									}
+									if val == value {
+										// Already there, so just exit
+										return true
+									}
+								}
+							}
+							break
+						}
+					}
+					return false
+				}
+				break
+
 			} else if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::NoteField") {
 				if cfd.API_Type == "note" {
 					for _, cf := range feature.Custom_Fields {
@@ -693,7 +730,7 @@ func (feature *Feature) HasCustomFieldValue(name, value string) bool {
 }
 
 func (feature *Feature) AddCustomFieldValue(name, value string) error {
-	// fmt.Printf("Feature.addfield %q.%q - %q\n", feature.Reference_Num, name, value)
+	fmt.Printf("Feature.addfield %q.%q - %q\n", feature.Reference_Num, name, value)
 	/*
 	   "Custom_Object_Links": [
 	     {
@@ -812,6 +849,50 @@ func (feature *Feature) AddCustomFieldValue(name, value string) error {
 					body = string(buf)
 				}
 				break
+			} else if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::SelectMultipleConstant") {
+				if cfd.API_Type == "array" {
+					values := []string{}
+
+					// Get existing values
+					for _, cf := range feature.Custom_Fields {
+						if cf.Name == name {
+							if cf.Value != nil {
+								vals, ok := cf.Value.([]interface{})
+								if !ok {
+									return fmt.Errorf("Can't convert '%#v') to []interface{}string", cf.Value)
+								}
+								for _, val := range vals {
+									v, ok := val.(string)
+									if !ok {
+										return fmt.Errorf("Can't convert '%#v') to string", v)
+									}
+									if v == value {
+										// Already there, so just exit
+										fmt.Printf("Already there\n")
+										return nil
+									} else {
+										values = append(values, v)
+									}
+								}
+							}
+							break
+						}
+					}
+
+					values = append(values, value)
+
+					req := struct {
+						Feature struct {
+							Custom_Fields map[string][]string `json:"custom_fields"`
+						} `json:"feature"`
+					}{}
+					req.Feature.Custom_Fields = map[string][]string{}
+					req.Feature.Custom_Fields[key] = values
+					fmt.Printf("add Value: %#v\n", values)
+					buf, _ := json.MarshalIndent(req, "", "  ")
+					body = string(buf)
+				}
+				break
 			} else if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::NoteField") {
 				if cfd.API_Type == "note" {
 					body = `{"feature":{"custom_fields":{"%s":"%s"}}}`
@@ -903,7 +984,7 @@ func (feature *Feature) RemoveCustomFieldValue(name, value string) error {
 					}
 					// Not in there so just return
 					if !found {
-						fmt.Printf("  Not there\n")
+						fmt.Printf("  Not there - 1\n")
 						return nil
 					}
 
@@ -934,6 +1015,63 @@ func (feature *Feature) RemoveCustomFieldValue(name, value string) error {
 					}{}
 					req.Feature.Custom_Fields = map[string]string{}
 					req.Feature.Custom_Fields[key] = ""
+					buf, _ := json.MarshalIndent(req, "", "  ")
+					body = string(buf)
+				}
+				break
+			} else if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::SelectMultipleConstant") {
+				if cfd.API_Type == "array" {
+					values := []string{}
+					found := false
+
+					// Get existing values
+					for _, cf := range feature.Custom_Fields {
+						if cf.Name == name {
+							if cf.Value != nil {
+								vals, ok := cf.Value.([]interface{})
+								if !ok {
+									fmt.Printf("cf: %#v\n", cf)
+									return fmt.Errorf("Can't convert '%#v') to []interface{}string", cf.Value)
+								}
+								for _, val := range vals {
+									v, ok := val.(string)
+									if !ok {
+										fmt.Printf("v: %#v\n", v)
+										return fmt.Errorf("Can't convert '%#v') to string", v)
+									}
+									if v == value {
+										// Already there, so just exit
+										found = true
+									} else {
+										values = append(values, v)
+									}
+								}
+							}
+							break
+						}
+					}
+
+					// Not in there so just return
+					if !found {
+						fmt.Printf("feature: %s\n", SprintfJSON(feature))
+						fmt.Printf("  Not there - 2\n")
+						return nil
+					}
+
+					// Weird, but to erase all pass in an array with an
+					// empty string
+					if len(values) == 0 {
+						values = nil
+					}
+
+					req := struct {
+						Feature struct {
+							Custom_Fields map[string][]string `json:"custom_fields"`
+						} `json:"feature"`
+					}{}
+					req.Feature.Custom_Fields = map[string][]string{}
+					req.Feature.Custom_Fields[key] = values
+					fmt.Printf("Value: %#v\n", values)
 					buf, _ := json.MarshalIndent(req, "", "  ")
 					body = string(buf)
 				}

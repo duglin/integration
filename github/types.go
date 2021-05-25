@@ -170,9 +170,9 @@ type Repository struct {
 	Labels_URL        string
 	Releases_URL      string
 	Deployments_URL   string
-	Created_At        string
+	Created_At        interface{} // string
 	Updated_At        string
-	Pushed_At         string
+	Pushed_At         interface{} // string
 	Git_URL           string
 	SSH_URL           string
 	Clone_URL         string
@@ -317,4 +317,48 @@ type Event_Milestone struct {
 
 type Event_Pull_Request struct {
 	*GitHubClient
+}
+
+type Event_Push struct {
+	*GitHubClient
+
+	Ref          string
+	Before       string
+	After        string
+	Commits      []*Commit
+	Pusher       *MiniUser
+	Repository   *Repository
+	Organization *Organization
+	Enterprise   *Enterprise
+	Installation struct{}
+	Sender       *User
+	Created      bool
+	Deleted      bool
+	Forced       bool
+	Compare      string
+	Head_Commit  *Commit
+}
+
+type Commit struct {
+	*GitHubClient
+
+	ID        string // SHA of commit
+	Tree_ID   string
+	Distinct  bool
+	Message   string
+	Timestamp string // ISO8601
+	URL       string
+	Author    *MiniUser
+	Committer *MiniUser
+	Added     []string
+	Removed   []string
+	Modified  []string
+}
+
+type MiniUser struct {
+	*GitHubClient
+
+	Name     string // Git name
+	Email    string // Git email
+	Username string
 }
