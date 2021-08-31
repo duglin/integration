@@ -514,6 +514,13 @@ func (repo *Repository) GetLabels() ([]*Label, error) {
 		return nil, err
 	}
 	return items.([]*Label), nil
+
+	labels := items.([]*Label)
+	for _, label := range labels {
+		label.SetGH(repo.GitHubClient)
+	}
+
+	return labels, nil
 }
 
 func (repo *Repository) GetIssues(query string) ([]*Issue, error) {
@@ -526,7 +533,13 @@ func (repo *Repository) GetIssues(query string) ([]*Issue, error) {
 	if err != nil {
 		return nil, err
 	}
-	return items.([]*Issue), nil
+
+	issues := items.([]*Issue)
+	for _, issue := range issues {
+		issue.SetGH(repo.GitHubClient)
+	}
+
+	return issues, nil
 }
 
 func (repo *Repository) GetMilestones(query string) ([]*Milestone, error) {
@@ -539,7 +552,13 @@ func (repo *Repository) GetMilestones(query string) ([]*Milestone, error) {
 	if err != nil {
 		return nil, err
 	}
-	return items.([]*Milestone), nil
+
+	milestones := items.([]*Milestone)
+	for _, milestone := range milestones {
+		milestone.SetGH(repo.GitHubClient)
+	}
+
+	return milestones, nil
 }
 
 // /repos/:owner/:repo/issues/:issue_number

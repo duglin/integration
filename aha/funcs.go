@@ -495,8 +495,8 @@ func (feature *Feature) SetName(name string) error {
 	_, err := feature.Aha("PUT",
 		feature.AhaClient.URL+"/api/v1/features/"+feature.Reference_Num, body)
 	if err != nil {
-		err = fmt.Errorf("Error updating Aha feature(%s) title: %s",
-			feature.Reference_Num, name)
+		err = fmt.Errorf("Error updating Aha feature(%s) title: %s -> %s",
+			feature.Reference_Num, name, err)
 	}
 
 	return err
@@ -511,8 +511,8 @@ func (feature *Feature) SetStatus(status string) error {
 	_, err := feature.Aha("PUT",
 		feature.AhaClient.URL+"/api/v1/features/"+feature.Reference_Num, body)
 	if err != nil {
-		err = fmt.Errorf("Error updating Aha feature(%s) status: %s",
-			feature.Reference_Num, status)
+		err = fmt.Errorf("Error updating Aha feature(%s) status: %s -> %s",
+			feature.Reference_Num, status, err)
 	}
 
 	return err
@@ -527,8 +527,8 @@ func (feature *Feature) SetDueDate(date string) error {
 	_, err := feature.Aha("PUT",
 		feature.AhaClient.URL+"/api/v1/features/"+feature.Reference_Num, body)
 	if err != nil {
-		err = fmt.Errorf("Error updating Aha feature(%s) end_date: %s",
-			feature.Reference_Num, date)
+		err = fmt.Errorf("Error updating Aha feature(%s) end_date: %s -> %s",
+			feature.Reference_Num, date, err)
 	}
 
 	return err
@@ -609,10 +609,16 @@ func (feature *Feature) RemoveTag(tag string) error {
 func (feature *Feature) GetCustomField(name string) (string, bool) {
 	for _, c := range feature.Custom_Fields {
 		if c.Name == name {
-			if c.Type == "url" {
-				return c.Value.(string), true
+			if c.Type == "url" || c.Type == "string" {
+				if c.Value == nil {
+					return "", true
+				} else {
+					return c.Value.(string), true
+				}
 			} else if c.Type == "note" {
 				return strings.TrimSpace(c.Value.(string)), true
+			} else {
+				fmt.Printf("Unkown GetCustomField.type: %s\n", c.Type)
 			}
 			break
 		}
