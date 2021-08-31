@@ -620,6 +620,7 @@ func (feature *Feature) GetCustomField(name string) (string, bool) {
 	return "", false
 }
 func (feature *Feature) HasCustomFieldValue(name, value string) bool {
+	value = strings.TrimSpace(value)
 	// fmt.Printf("%v -> hasCust: %s %s\n", feature.Reference_Num, name, value)
 	for _, sd := range feature.Product.Screen_Definitions {
 		if sd.Screenable_Type != "Feature" {
@@ -647,7 +648,7 @@ func (feature *Feature) HasCustomFieldValue(name, value string) bool {
 					// Find 'option' that has the key
 					ID := ""
 					for _, opt := range cfd.Options {
-						if opt.Label == value {
+						if strings.TrimSpace(opt.Label) == value {
 							ID = opt.ID
 							break
 						}
@@ -678,7 +679,8 @@ func (feature *Feature) HasCustomFieldValue(name, value string) bool {
 				if cfd.API_Type == "string" {
 					for _, cf := range feature.Custom_Fields {
 						if cf.Key == key {
-							return cf.Value == value
+							tmp := cf.Value.(string)
+							return strings.TrimSpace(tmp) == value
 						}
 					}
 					return false
@@ -700,7 +702,8 @@ func (feature *Feature) HasCustomFieldValue(name, value string) bool {
 										fmt.Printf("Can't convert '%#v') to string", v)
 										return false
 									}
-									if val == value {
+									tmp := val.(string)
+									if strings.TrimSpace(tmp) == value {
 										// Already there, so just exit
 										return true
 									}
@@ -717,7 +720,8 @@ func (feature *Feature) HasCustomFieldValue(name, value string) bool {
 				if cfd.API_Type == "note" {
 					for _, cf := range feature.Custom_Fields {
 						if cf.Key == key {
-							return cf.Value == value
+							tmp := cf.Value.(string)
+							return strings.TrimSpace(tmp) == value
 						}
 					}
 					return false
