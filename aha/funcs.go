@@ -685,8 +685,12 @@ func (feature *Feature) HasCustomFieldValue(name, value string) bool {
 				if cfd.API_Type == "string" {
 					for _, cf := range feature.Custom_Fields {
 						if cf.Key == key {
-							tmp := cf.Value.(string)
-							return strings.TrimSpace(tmp) == value
+							val := ""
+							if cf.Value != nil {
+								val = strings.TrimSpace(cf.Value.(string))
+							}
+
+							return val == value
 						}
 					}
 					return false
