@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -625,6 +626,307 @@ func (feature *Feature) GetCustomField(name string) (string, bool) {
 	}
 	return "", false
 }
+
+func (feature *Feature) CustomField(name, action, value string) (string, error) {
+	// action = GET, SET, REMOVE, COMPARE
+	// bool = found or not
+
+	value = strings.TrimSpace(value)
+	log.Printf("CustomField(name:%s,action:%s,value:%q)", name, action, value)
+
+	body := ""
+
+	for _, sd := range feature.Product.Screen_Definitions {
+		if sd.Screenable_Type != "Feature" {
+			continue
+		}
+
+		for _, cfd := range sd.Custom_Field_Definitions {
+			// Allow Name to be the real name or the key
+			if cfd.Name != name && cfd.Key != name {
+				continue
+			}
+
+			// Use the 'key' from this point on
+			key := cfd.Key
+
+			if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::UrlField") {
+				if cfd.API_Type == "url" {
+					if action == "GET" {
+						return "...", nil
+					}
+					if action == "SET" {
+						body = `{"feature":{"custom_fields":{"%s":"%s"}}}`
+						body = fmt.Sprintf(body, key, value)
+					}
+					if action == "REMOVE" {
+						body = `{"feature":{"custom_fields":{"` + key + `":""}}}`
+					}
+					if action == "COMPARE" {
+						val := "..."
+						if val == value {
+							return "true", nil
+						}
+						return "false", nil
+					}
+				} else {
+					return "", fmt.Errorf("Unsupported cfd: %s looking for %s",
+						cfd.API_Type, name)
+				}
+				// break
+			} else if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::LinkMany") {
+				if cfd.API_Type == "array" {
+					// Find 'option' that has the key
+					ID := ""
+					for _, opt := range cfd.Options {
+						if strings.TrimSpace(opt.Label) == value {
+							ID = opt.ID
+							break
+						}
+					}
+					if ID == "" {
+						return "", fmt.Errorf("1- Can't find %s/%q as a "+
+							"valid option\n", name, value)
+					}
+
+					// Get existing values
+					values := []string{}
+					found := true
+
+					for _, col := range feature.Custom_Object_Links {
+						if col.Key == key {
+							found = true
+							for _, rec := range col.Record_IDs {
+								if rec == ID {
+									if action == "GET" {
+										break
+									}
+									if action == "COMPARE" {
+										return "true", nil
+									}
+									if action == "SET" {
+										// Already there, so just exit
+										return "", nil
+									}
+								}
+								if action != "REMOVE" {
+									values = append(values, rec)
+								}
+							}
+							if action == "COMPARE" {
+								return "false", nil
+							}
+							break
+						}
+					}
+					if !found {
+						return "", fmt.Errorf("404: Couldn't find name %q",
+							name)
+					}
+					if action == "GET" {
+						return value, nil
+					}
+					if action == "SET" {
+						values = append(values, value)
+					}
+					if len(values) == 0 {
+						values = []string{""}
+					}
+					req := struct {
+						Feature struct {
+							Custom_Object_Links map[string][]string `json:"custom_object_links"`
+						} `json:"feature"`
+					}{}
+					req.Feature.Custom_Object_Links = map[string][]string{}
+					req.Feature.Custom_Object_Links[key] = values
+					buf, _ := json.MarshalIndent(req, "", "  ")
+					body = string(buf)
+					// break
+				} else {
+					return "", fmt.Errorf("Unsupported cfd-link: %s",
+						cfd.API_Type)
+				}
+			} else if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::SelectConstant") {
+				if cfd.API_Type == "string" {
+					// Find 'option' that has the key
+					ID := ""
+					if action == "SET" {
+						for _, opt := range cfd.Options {
+							if opt.Label == value {
+								ID = opt.ID
+								break
+							}
+						}
+						if ID == "" {
+							return "", fmt.Errorf("4- Can't find %s/%q as a "+
+								"valid option\n", name, value)
+						}
+					}
+
+					found := false
+					for _, cf := range feature.Custom_Fields {
+						if cf.Key == key {
+							val := strings.TrimSpace(cf.Value.(string))
+							if action == "GET" {
+								return val, nil
+							}
+							if action == "COMPARE" {
+								if val == value {
+									return "true", nil
+								}
+								return "false", nil
+							}
+							if action == "SET" && val == value {
+								// Already there
+								return "", nil
+							}
+
+							if action == "SET" {
+								req := struct {
+									Feature struct {
+										Custom_Fields map[string]string `json:"custom_fields"`
+									} `json:"feature"`
+								}{}
+								req.Feature.Custom_Fields = map[string]string{}
+								req.Feature.Custom_Fields[key] = ID
+								buf, _ := json.MarshalIndent(req, "", "  ")
+								body = string(buf)
+							}
+
+							if action == "REMOVE" {
+								if value == "" {
+									// Already gone
+									return "", nil
+								}
+								req := struct {
+									Feature struct {
+										Custom_Fields map[string]string `json:"custom_fields"`
+									} `json:"feature"`
+								}{}
+								req.Feature.Custom_Fields = map[string]string{}
+								req.Feature.Custom_Fields[key] = ""
+								buf, _ := json.MarshalIndent(req, "", "  ")
+								body = string(buf)
+							}
+							break
+						}
+					}
+					if !found {
+						return "", fmt.Errorf("404: Couldn't find name %q",
+							name)
+					}
+				} else {
+					return "", fmt.Errorf("Unsupported selConst: %s",
+						cfd.API_Type)
+				}
+				// break
+			} else if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::SelectMultipleConstant") {
+				if cfd.API_Type == "array" {
+					found := false
+					for _, cf := range feature.Custom_Fields {
+						if cf.Name == name {
+							found = true
+							vals := []string{}
+							if cf.Value != nil {
+								values, ok := cf.Value.([]interface{})
+								if !ok {
+									return "", fmt.Errorf("Can't convert '%#v') to []interface{}", cf.Value)
+								}
+								for _, val := range values {
+									v, ok := val.(string)
+									if !ok {
+										return "", fmt.Errorf("Can't convert '%#v') to string", v)
+									}
+									v = strings.TrimSpace(v)
+									if action == "REMOVE" && v != value {
+										vals = append(vals, v)
+									}
+									if v == value {
+										if action == "SET" {
+											// Already there
+											return "", nil
+										}
+										if action == "COMPARE" {
+											// yes it's there
+											return "true", nil
+										}
+									}
+								}
+								if action == "GET" {
+									return strings.Join(vals, ","), nil
+								}
+								if action == "COMPARE" {
+									return "false", nil
+								}
+								if action == "SET" {
+									vals = append(vals, value)
+								}
+								req := struct {
+									Feature struct {
+										Custom_Fields map[string][]string `json:"custom_fields"`
+									} `json:"feature"`
+								}{}
+								req.Feature.Custom_Fields = map[string][]string{}
+								req.Feature.Custom_Fields[key] = vals
+								fmt.Printf("add Value: %#v\n", vals)
+								buf, _ := json.MarshalIndent(req, "", "  ")
+								body = string(buf)
+								break
+							}
+						}
+					}
+					if !found {
+						return "", fmt.Errorf("404: Couldn't find name %q",
+							name)
+					}
+					// break
+				} else {
+					return "", fmt.Errorf("Mult - Unsupported cdf.type: %s",
+						cfd.Type)
+				}
+				// break
+			} else if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::NoteField") {
+				if cfd.API_Type == "note" {
+					for _, cf := range feature.Custom_Fields {
+						if cf.Key == key {
+							val := ""
+							if cf.Value != nil {
+								val = strings.TrimSpace(cf.Value.(string))
+							}
+							if val == value {
+								return "true", nil
+							}
+							return "false", nil
+						}
+					}
+					return "false", nil
+				}
+				break
+			}
+		}
+	}
+
+	if body != "" {
+		res, err := feature.Aha("PUT",
+			feature.AhaClient.URL+"/api/v1/features/"+feature.Reference_Num, body)
+		if err != nil {
+			return "", fmt.Errorf("Error setting feature(%s) field: %q to %q. %s",
+				feature.Reference_Num, name, value, res.StatusCode, err.Error())
+		}
+		f := struct{ Feature Feature }{}
+		err = json.Unmarshal([]byte(res.Body), &f)
+		if err != nil {
+			return "", err
+		}
+
+		f.Feature.AhaClient = feature.AhaClient
+		f.Feature.Product = feature.Product
+		*feature = f.Feature
+	}
+
+	return "", fmt.Errorf("404: Couldn't find name %q", name)
+}
+
 func (feature *Feature) HasCustomFieldValue(name, value string) bool {
 	value = strings.TrimSpace(value)
 	// fmt.Printf("%v -> hasCust: %s %s\n", feature.Reference_Num, name, value)
@@ -685,8 +987,11 @@ func (feature *Feature) HasCustomFieldValue(name, value string) bool {
 				if cfd.API_Type == "string" {
 					for _, cf := range feature.Custom_Fields {
 						if cf.Key == key {
-							tmp := cf.Value.(string)
-							return strings.TrimSpace(tmp) == value
+							val := ""
+							if cf.Value != nil {
+								val = strings.TrimSpace(cf.Value.(string))
+							}
+							return val == value
 						}
 					}
 					return false
@@ -726,8 +1031,11 @@ func (feature *Feature) HasCustomFieldValue(name, value string) bool {
 				if cfd.API_Type == "note" {
 					for _, cf := range feature.Custom_Fields {
 						if cf.Key == key {
-							tmp := cf.Value.(string)
-							return strings.TrimSpace(tmp) == value
+							val := ""
+							if cf.Value != nil {
+								val = strings.TrimSpace(cf.Value.(string))
+							}
+							return val == value
 						}
 					}
 					return false
