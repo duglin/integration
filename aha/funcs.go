@@ -6,10 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
+	// "log"
 	"net/http"
 	"net/url"
 	"reflect"
+	"sort"
 	"strings"
 )
 
@@ -629,10 +630,9 @@ func (feature *Feature) GetCustomField(name string) (string, bool) {
 
 func (feature *Feature) CustomField(name, action, value string) (string, error) {
 	// action = GET, SET, REMOVE, COMPARE
-	// bool = found or not
 
 	value = strings.TrimSpace(value)
-	log.Printf("CustomField(name:%s,action:%s,value:%q)", name, action, value)
+	// log.Printf("CustomField(name:%s,action:%s,value:%q)", name, action, value)
 
 	body := ""
 
@@ -650,103 +650,189 @@ func (feature *Feature) CustomField(name, action, value string) (string, error) 
 			// Use the 'key' from this point on
 			key := cfd.Key
 
+			// fmt.Printf("type: %s / %s\n", cfd.Type, cfd.API_Type)
+
 			if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::UrlField") {
+				// EXAMPLE: "GHE URL" field
 				if cfd.API_Type == "url" {
-					if action == "GET" {
-						return "...", nil
-					}
-					if action == "SET" {
-						body = `{"feature":{"custom_fields":{"%s":"%s"}}}`
-						body = fmt.Sprintf(body, key, value)
-					}
-					if action == "REMOVE" {
-						body = `{"feature":{"custom_fields":{"` + key + `":""}}}`
-					}
-					if action == "COMPARE" {
-						val := "..."
-						if val == value {
-							return "true", nil
+					found := false
+					for _, cf := range feature.Custom_Fields {
+						if cf.Key == key {
+							found = true
+							val := ""
+							if cf.Value != nil {
+								val = strings.TrimSpace(cf.Value.(string))
+							}
+							if action == "GET" {
+								return val, nil
+							}
+							if action == "COMPARE" {
+								if val == value {
+									return "true", nil
+								}
+								return "false", nil
+							}
+							if action == "SET" {
+								if val == value {
+									return "", nil
+								}
+							}
+							if action == "REMOVE" {
+								if value == "" {
+									if val == "" {
+										return "", nil // already empty
+									}
+								} else {
+									if val != value {
+										return "", nil
+									}
+									value = ""
+								}
+							}
 						}
-						return "false", nil
 					}
+					if !found {
+						if value == "" {
+							return "", nil
+						}
+					}
+
+					body = `{"feature":{"custom_fields":{"%s":"%s"}}}`
+					body = fmt.Sprintf(body, key, value)
 				} else {
 					return "", fmt.Errorf("Unsupported cfd: %s looking for %s",
 						cfd.API_Type, name)
 				}
-				// break
 			} else if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::LinkMany") {
+				// EXAMPLE: "Public Cloud Customer/Program"
 				if cfd.API_Type == "array" {
-					// Find 'option' that has the key
+					// Find 'option' that has the key (if we have a key)
 					ID := ""
+					ID2Value := map[string]string{}
+					Value2ID := map[string]string{}
+
 					for _, opt := range cfd.Options {
-						if strings.TrimSpace(opt.Label) == value {
-							ID = opt.ID
-							break
-						}
+						label := strings.TrimSpace(opt.Label)
+						ID2Value[opt.ID] = label
+						Value2ID[label] = opt.ID
 					}
-					if ID == "" {
+
+					ID = Value2ID[value]
+					if value != "" && ID == "" {
 						return "", fmt.Errorf("1- Can't find %s/%q as a "+
 							"valid option\n", name, value)
 					}
 
 					// Get existing values
 					values := []string{}
-					found := true
+					IDs := []string{}
+					removed := true
+
+					if len(feature.Custom_Object_Links) == 0 {
+						if action == "COMPARE" {
+							if value == "" {
+								return "true", nil
+							}
+							return "false", nil
+						}
+					}
 
 					for _, col := range feature.Custom_Object_Links {
 						if col.Key == key {
-							found = true
+							if action == "COMPARE" && value == "" {
+								if len(col.Record_IDs) == 0 {
+									return "true", nil
+								}
+								return "false", nil
+							}
+
 							for _, rec := range col.Record_IDs {
-								if rec == ID {
-									if action == "GET" {
-										break
-									}
-									if action == "COMPARE" {
-										return "true", nil
-									}
-									if action == "SET" {
+								val := ID2Value[rec]
+
+								if action == "GET" {
+									values = append(values, val)
+									continue
+								}
+
+								if action == "COMPARE" && val == value {
+									return "true", nil
+								}
+
+								if action == "SET" {
+									if val == value {
 										// Already there, so just exit
 										return "", nil
 									}
+									IDs = append(IDs, rec)
 								}
-								if action != "REMOVE" {
-									values = append(values, rec)
+
+								if action == "REMOVE" {
+									if val == value {
+										removed = true
+										continue
+									}
+									IDs = append(IDs, rec)
 								}
-							}
-							if action == "COMPARE" {
-								return "false", nil
 							}
 							break
 						}
 					}
-					if !found {
-						return "", fmt.Errorf("404: Couldn't find name %q",
-							name)
-					}
 					if action == "GET" {
-						return value, nil
+						sort.Strings(values)
+						return fmt.Sprintf("%s", strings.Join(values, ",")), nil
+					}
+					if action == "COMPARE" {
+						if value == "" {
+							if len(IDs) == 0 {
+								return "true", nil
+							}
+						}
+						return "false", nil
 					}
 					if action == "SET" {
-						values = append(values, value)
+						if value == "" { // clear list
+							if len(IDs) == 0 { // already empty
+								return "", nil
+							}
+							IDs = nil
+						} else {
+							IDs = append(IDs, ID)
+						}
 					}
-					if len(values) == 0 {
-						values = []string{""}
+					if action == "REMOVE" {
+						if value != "" {
+							if !removed {
+								return "", nil
+							}
+						} else {
+							if len(IDs) == 0 {
+								return "", nil
+							}
+							IDs = nil
+						}
 					}
+
+					// Weird, but to erase all pass in an array with an
+					// empty string
+					if len(IDs) == 0 {
+						IDs = []string{""}
+					}
+
 					req := struct {
 						Feature struct {
 							Custom_Object_Links map[string][]string `json:"custom_object_links"`
 						} `json:"feature"`
 					}{}
 					req.Feature.Custom_Object_Links = map[string][]string{}
-					req.Feature.Custom_Object_Links[key] = values
+					req.Feature.Custom_Object_Links[key] = IDs
 					buf, _ := json.MarshalIndent(req, "", "  ")
 					body = string(buf)
-					// break
 				} else {
 					return "", fmt.Errorf("Unsupported cfd-link: %s",
 						cfd.API_Type)
 				}
 			} else if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::SelectConstant") {
+				// EXAMPLE: Committed, Outlook
 				if cfd.API_Type == "string" {
 					// Find 'option' that has the key
 					ID := ""
@@ -759,14 +845,18 @@ func (feature *Feature) CustomField(name, action, value string) (string, error) 
 						}
 						if ID == "" {
 							return "", fmt.Errorf("4- Can't find %s/%q as a "+
-								"valid option\n", name, value)
+								"valid option", name, value)
 						}
 					}
 
 					found := false
 					for _, cf := range feature.Custom_Fields {
 						if cf.Key == key {
-							val := strings.TrimSpace(cf.Value.(string))
+							found = true
+							val := ""
+							if cf.Value != nil {
+								val = strings.TrimSpace(cf.Value.(string))
+							}
 							if action == "GET" {
 								return val, nil
 							}
@@ -781,20 +871,8 @@ func (feature *Feature) CustomField(name, action, value string) (string, error) 
 								return "", nil
 							}
 
-							if action == "SET" {
-								req := struct {
-									Feature struct {
-										Custom_Fields map[string]string `json:"custom_fields"`
-									} `json:"feature"`
-								}{}
-								req.Feature.Custom_Fields = map[string]string{}
-								req.Feature.Custom_Fields[key] = ID
-								buf, _ := json.MarshalIndent(req, "", "  ")
-								body = string(buf)
-							}
-
 							if action == "REMOVE" {
-								if value == "" {
+								if val == "" {
 									// Already gone
 									return "", nil
 								}
@@ -811,8 +889,33 @@ func (feature *Feature) CustomField(name, action, value string) (string, error) 
 							break
 						}
 					}
+
+					if action == "SET" {
+						req := struct {
+							Feature struct {
+								Custom_Fields map[string]string `json:"custom_fields"`
+							} `json:"feature"`
+						}{}
+						req.Feature.Custom_Fields = map[string]string{}
+						req.Feature.Custom_Fields[key] = ID
+						buf, _ := json.MarshalIndent(req, "", "  ")
+						body = string(buf)
+						found = true // lie but do it
+					}
+
 					if !found {
-						return "", fmt.Errorf("404: Couldn't find name %q",
+						if action == "REMOVE" || action == "GET" {
+							return "", nil
+						}
+						if action == "COMPARE" {
+							if value == "" {
+								return "true", nil
+							} else {
+								return "false", nil
+							}
+						}
+
+						return "", fmt.Errorf("404: 2-Couldn't find name %q",
 							name)
 					}
 				} else {
@@ -821,12 +924,13 @@ func (feature *Feature) CustomField(name, action, value string) (string, error) 
 				}
 				// break
 			} else if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::SelectMultipleConstant") {
+				// EXAMPLE: Geo Deploy
 				if cfd.API_Type == "array" {
-					found := false
+					removed := false
+					vals := []string{}
+
 					for _, cf := range feature.Custom_Fields {
 						if cf.Name == name {
-							found = true
-							vals := []string{}
 							if cf.Value != nil {
 								values, ok := cf.Value.([]interface{})
 								if !ok {
@@ -838,47 +942,82 @@ func (feature *Feature) CustomField(name, action, value string) (string, error) 
 										return "", fmt.Errorf("Can't convert '%#v') to string", v)
 									}
 									v = strings.TrimSpace(v)
-									if action == "REMOVE" && v != value {
-										vals = append(vals, v)
+
+									// Found it
+									if action == "COMPARE" && v == value {
+										return "true", nil
 									}
-									if v == value {
-										if action == "SET" {
-											// Already there
-											return "", nil
-										}
-										if action == "COMPARE" {
-											// yes it's there
-											return "true", nil
-										}
+
+									// already there
+									if action == "SET" && v == value {
+										return "", nil
 									}
+
+									if action == "REMOVE" && v == value {
+										removed = true
+										continue
+									}
+									vals = append(vals, v)
 								}
-								if action == "GET" {
-									return strings.Join(vals, ","), nil
-								}
-								if action == "COMPARE" {
-									return "false", nil
-								}
-								if action == "SET" {
-									vals = append(vals, value)
-								}
-								req := struct {
-									Feature struct {
-										Custom_Fields map[string][]string `json:"custom_fields"`
-									} `json:"feature"`
-								}{}
-								req.Feature.Custom_Fields = map[string][]string{}
-								req.Feature.Custom_Fields[key] = vals
-								fmt.Printf("add Value: %#v\n", vals)
-								buf, _ := json.MarshalIndent(req, "", "  ")
-								body = string(buf)
 								break
 							}
 						}
 					}
-					if !found {
-						return "", fmt.Errorf("404: Couldn't find name %q",
-							name)
+
+					if action == "GET" {
+						return strings.Join(vals, ","), nil
 					}
+					if action == "COMPARE" {
+						if value == "" {
+							if len(vals) == 0 {
+								return "true", nil
+							}
+							return "false", nil
+						}
+						return "false", nil
+					}
+					if action == "SET" {
+						if value == "" {
+							// Already empty
+							if len(vals) == 0 {
+								return "", nil
+							}
+							// Clear list
+							vals = nil
+						} else {
+							// Not there so add it
+							vals = append(vals, value)
+						}
+					}
+					if action == "REMOVE" {
+						if value != "" {
+							// Wasn't found so just return, already gone
+							if !removed {
+								return "", nil
+							}
+						} else {
+							// if value == "" means erase all
+							if len(vals) == 0 {
+								return "", nil // Already empty
+							}
+							vals = nil
+						}
+					}
+
+					// This is how we clear the list, not an empty array
+					if len(vals) == 0 {
+						vals = nil
+					}
+
+					req := struct {
+						Feature struct {
+							Custom_Fields map[string][]string `json:"custom_fields"`
+						} `json:"feature"`
+					}{}
+					req.Feature.Custom_Fields = map[string][]string{}
+					req.Feature.Custom_Fields[key] = vals
+					buf, _ := json.MarshalIndent(req, "", "  ")
+					body = string(buf)
 					// break
 				} else {
 					return "", fmt.Errorf("Mult - Unsupported cdf.type: %s",
@@ -886,27 +1025,80 @@ func (feature *Feature) CustomField(name, action, value string) (string, error) 
 				}
 				// break
 			} else if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::NoteField") {
+				// EXAMPLE: Executive Status Summary
 				if cfd.API_Type == "note" {
+					found := false
 					for _, cf := range feature.Custom_Fields {
 						if cf.Key == key {
+							found = true
 							val := ""
 							if cf.Value != nil {
 								val = strings.TrimSpace(cf.Value.(string))
 							}
-							if val == value {
-								return "true", nil
+
+							if action == "GET" {
+								return val, nil
 							}
-							return "false", nil
+
+							if action == "COMPARE" {
+								if val == value {
+									return "true", nil
+								}
+								return "false", nil
+							}
+
+							if action == "SET" && val == value {
+								return "", nil
+							}
+
+							if action == "REMOVE" {
+								if value == "" {
+									if val == "" {
+										return "", nil
+									}
+								} else {
+									if val != value {
+										return "", nil
+									}
+									value = ""
+								}
+							}
 						}
 					}
-					return "false", nil
+
+					if !found {
+						if action == "GET" {
+							return "", nil
+						}
+						if action == "COMPARE" {
+							if value == "" {
+								return "true", nil
+							} else {
+								return "false", nil
+							}
+						}
+						if action == "SET" && value == "" {
+							return "", nil
+						}
+						if action == "REMOVE" {
+							return "", nil
+						}
+					}
+
+					body = `{"feature":{"custom_fields":{"%s":"%s"}}}`
+					body = fmt.Sprintf(body, key, value)
 				}
-				break
+				//break
+			} else {
+				// fmt.Printf("unsupported type: %s / %s\n", cfd.Type, cfd.API_Type)
+				continue
 			}
+			break // We did something, so break
 		}
 	}
 
 	if body != "" {
+		// fmt.Printf("Body: %s\n", body)
 		res, err := feature.Aha("PUT",
 			feature.AhaClient.URL+"/api/v1/features/"+feature.Reference_Num, body)
 		if err != nil {
@@ -922,9 +1114,11 @@ func (feature *Feature) CustomField(name, action, value string) (string, error) 
 		f.Feature.AhaClient = feature.AhaClient
 		f.Feature.Product = feature.Product
 		*feature = f.Feature
+
+		return "", nil
 	}
 
-	return "", fmt.Errorf("404: Couldn't find name %q", name)
+	return "", fmt.Errorf("404: 4-Couldn't find name %q", name)
 }
 
 func (feature *Feature) HasCustomFieldValue(name, value string) bool {
@@ -1140,7 +1334,7 @@ func (feature *Feature) AddCustomFieldValue(name, value string) error {
 						}
 					}
 					if ID == "" {
-						return fmt.Errorf("4- Can't find %s/%q as a valid option\n", name, value)
+						return fmt.Errorf("4- Can't find %s/%q as a valid option", name, value)
 					}
 
 					// Get existing values
