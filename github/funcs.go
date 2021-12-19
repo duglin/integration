@@ -145,6 +145,26 @@ func (e *MiniUser) SetGH(gh *GitHubClient) {
 	}
 }
 
+func (e *Project) SetGH(gh *GitHubClient) {
+	if e != nil {
+		e.GitHubClient = gh
+		e.Creator.SetGH(gh)
+	}
+}
+
+func (e *Column) SetGH(gh *GitHubClient) {
+	if e != nil {
+		e.GitHubClient = gh
+	}
+}
+
+func (e *Card) SetGH(gh *GitHubClient) {
+	if e != nil {
+		e.GitHubClient = gh
+		e.Creator.SetGH(gh)
+	}
+}
+
 type GitResponse struct {
 	StatusCode int
 	Links      map[string]string
@@ -918,6 +938,37 @@ func (issue *Issue) GetRepository() (*Repository, error) {
 	return &repo, nil
 }
 
+func (repo *Repository) GetProjects() ([]*Project, error) {
+	url := repo.URL + "/projects"
+
+	items, err := repo.GetAll(url, []*Project{})
+	if err != nil {
+		return nil, err
+	}
+
+	projects := items.([]*Project)
+	for _, project := range projects {
+		project.SetGH(repo.GitHubClient)
+	}
+
+	return projects, nil
+}
+
+func (repo *Repository) GetProject(name string) (*Project, error) {
+	projects, err := repo.GetProjects()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, project := range projects {
+		if project.Name == name {
+			return project, nil
+		}
+	}
+
+	return nil, nil
+}
+
 func (repo *Repository) GetFile(path string) ([]byte, error) {
 	url := fmt.Sprintf("%s/contents/%s", repo.URL, path)
 
@@ -931,6 +982,96 @@ func (repo *Repository) GetFile(path string) ([]byte, error) {
 	}
 
 	return res.Body, nil
+}
+
+// Find all cards for an issue in a project
+func (issue *Issue) GetProjectCards(name string) ([]*Card, error) {
+	repo, err := issue.GetRepository()
+	if err != nil {
+		return nil, err
+	}
+	proj, err := repo.GetProject(name)
+	if err != nil {
+		return nil, err
+	}
+	cols, err := proj.GetColumns()
+	if err != nil {
+		return nil, err
+	}
+
+	var result []*Card
+
+	for _, col := range cols {
+		cards, _ := col.GetCards()
+		for _, card := range cards {
+			if card.Content_URL == issue.URL {
+				result = append(result, card)
+			}
+		}
+	}
+
+	return result, nil
+}
+
+func (issue *Issue) AddToProject(name string) error {
+	repo, err := issue.GetRepository()
+	if err != nil {
+		return err
+	}
+	proj, err := repo.GetProject(name)
+	if err != nil {
+		return err
+	}
+	col, err := proj.GetColumn("Under Review")
+	if err != nil {
+		return err
+	}
+
+	data := fmt.Sprintf(`{"note":null,"content_id":%d,"content_type":"Issue"}`,
+		issue.ID)
+
+	res, err := repo.Git("POST", col.Cards_URL, data)
+	if res.Body != nil {
+		gitErr := struct {
+			Message string
+			Errors  []struct {
+				Resource string
+				Code     string
+				Field    string
+				Message  string
+			}
+			Documentation_URL string
+		}{}
+
+		err := json.Unmarshal(res.Body, &gitErr)
+		if err == nil {
+			if gitErr.Errors != nil {
+				if gitErr.Errors[0].Message == "Project already has the associated issue" {
+					return nil
+				}
+			}
+		}
+	}
+
+	return err
+}
+
+func (issue *Issue) RemoveFromProject(name string) error {
+	cards, err := issue.GetProjectCards(name)
+	if err != nil {
+		return err
+	}
+
+	for _, card := range cards {
+		card.Delete()
+	}
+
+	return nil
+}
+
+func (card *Card) Delete() error {
+	_, err := card.Git("DELETE", card.URL, "")
+	return err
 }
 
 func (issue *Issue) MoveToRepository(repoName string) error {
@@ -965,4 +1106,67 @@ mutation {
 	}
 
 	return nil
+}
+
+func (project *Project) GetColumns() ([]*Column, error) {
+	items, err := project.GetAll(project.Columns_URL, []*Column{})
+	if err != nil {
+		return nil, err
+	}
+
+	columns := items.([]*Column)
+	for _, column := range columns {
+		column.SetGH(project.GitHubClient)
+	}
+
+	return columns, nil
+}
+
+func (project *Project) GetColumn(name string) (*Column, error) {
+	items, err := project.GetAll(project.Columns_URL, []*Column{})
+	if err != nil {
+		return nil, err
+	}
+
+	columns := items.([]*Column)
+	for _, column := range columns {
+		if column.Name == name {
+			column.SetGH(project.GitHubClient)
+			return column, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func (project *Project) GetCards() ([]*Card, error) {
+	cols, err := project.GetColumns()
+	if err != nil {
+		return nil, err
+	}
+
+	var result []*Card
+
+	for _, col := range cols {
+		cards, _ := col.GetCards()
+		for _, card := range cards {
+			result = append(result, card)
+		}
+	}
+
+	return result, nil
+}
+
+func (column *Column) GetCards() ([]*Card, error) {
+	items, err := column.GetAll(column.Cards_URL, []*Card{})
+	if err != nil {
+		return nil, err
+	}
+
+	cards := items.([]*Card)
+	for _, card := range cards {
+		card.SetGH(column.GitHubClient)
+	}
+
+	return cards, nil
 }

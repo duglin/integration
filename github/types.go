@@ -362,3 +362,50 @@ type MiniUser struct {
 	Email    string // Git email
 	Username string
 }
+
+type Project struct {
+	*GitHubClient
+
+	Owner_URL   string
+	URL         string
+	HTML_URL    string
+	Columns_URL string
+	ID          int
+	Node_ID     string
+	Name        string
+	Body        string
+	Number      int
+	State       string
+	Creator     *User
+	Created_At  string
+	Updated_At  string
+}
+
+type Column struct {
+	*GitHubClient
+
+	URL         string
+	Project_URL string
+	Cards_URL   string
+	ID          int
+	Node_ID     string
+	Name        string
+	Created_At  string
+	Updated_At  string
+}
+
+type Card struct {
+	*GitHubClient
+
+	URL         string
+	Project_URL string
+	ID          int
+	Node_ID     string
+	Note        *string
+	Archived    bool
+	Creator     *User
+	Created_At  string
+	Updated_At  string
+	Column_URL  string
+	Content_URL string
+}
