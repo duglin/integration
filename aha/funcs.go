@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	// "log"
+	"log"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -386,7 +386,7 @@ func (product *Product) GetCustomObjectRecord(id string) (*Custom_Object_Record,
 	res, _ := product.Aha("GET",
 		product.AhaClient.URL+"/api/v1/custom_object_records/6858965262405902740", "")
 	if res.Body != "" {
-		fmt.Printf("%s\n", res.Body)
+		log.Printf("%s\n", res.Body)
 	}
 
 	res, err := product.Aha("GET",
@@ -620,7 +620,7 @@ func (feature *Feature) GetCustomField(name string) (string, bool) {
 			} else if c.Type == "note" {
 				return strings.TrimSpace(c.Value.(string)), true
 			} else {
-				fmt.Printf("Unkown GetCustomField.type: %s\n", c.Type)
+				log.Printf("Unkown GetCustomField.type: %s\n", c.Type)
 			}
 			break
 		}
@@ -1142,7 +1142,7 @@ func (feature *Feature) HasCustomFieldValue(name, value string) bool {
 					val := "..."
 					return val == value
 				} else {
-					fmt.Printf("Unsupported cfd: %s looking for %s", cfd.API_Type, name)
+					log.Printf("Unsupported cfd: %s looking for %s", cfd.API_Type, name)
 					return false
 				}
 			} else if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::LinkMany") {
@@ -1156,7 +1156,7 @@ func (feature *Feature) HasCustomFieldValue(name, value string) bool {
 						}
 					}
 					if ID == "" {
-						fmt.Printf("1- Can't find %s/%q as a valid option\n", name, value)
+						log.Printf("1- Can't find %s/%q as a valid option\n", name, value)
 						return false
 					}
 
@@ -1174,7 +1174,7 @@ func (feature *Feature) HasCustomFieldValue(name, value string) bool {
 					}
 					return false
 				} else {
-					fmt.Printf("Unsupported cfd-link: %s", cfd.API_Type)
+					log.Printf("Unsupported cfd-link: %s", cfd.API_Type)
 					return false
 				}
 			} else if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::SelectConstant") {
@@ -1198,13 +1198,13 @@ func (feature *Feature) HasCustomFieldValue(name, value string) bool {
 							if cf.Value != nil {
 								values, ok := cf.Value.([]interface{})
 								if !ok {
-									fmt.Printf("Can't convert '%#v') to []interface{}string", cf.Value)
+									log.Printf("Can't convert '%#v') to []interface{}string", cf.Value)
 									return false
 								}
 								for _, val := range values {
 									v, ok := val.(string)
 									if !ok {
-										fmt.Printf("Can't convert '%#v') to string", v)
+										log.Printf("Can't convert '%#v') to string", v)
 										return false
 									}
 									tmp := val.(string)
@@ -1242,7 +1242,7 @@ func (feature *Feature) HasCustomFieldValue(name, value string) bool {
 }
 
 func (feature *Feature) AddCustomFieldValue(name, value string) error {
-	fmt.Printf("Feature.addfield %q.%q - %q\n", feature.Reference_Num, name, value)
+	log.Printf("Feature.addfield %q.%q - %q\n", feature.Reference_Num, name, value)
 	/*
 	   "Custom_Object_Links": [
 	     {
@@ -1380,7 +1380,7 @@ func (feature *Feature) AddCustomFieldValue(name, value string) error {
 									}
 									if v == value {
 										// Already there, so just exit
-										fmt.Printf("Already there\n")
+										log.Printf("Already there\n")
 										return nil
 									} else {
 										values = append(values, v)
@@ -1400,7 +1400,7 @@ func (feature *Feature) AddCustomFieldValue(name, value string) error {
 					}{}
 					req.Feature.Custom_Fields = map[string][]string{}
 					req.Feature.Custom_Fields[key] = values
-					fmt.Printf("add Value: %#v\n", values)
+					log.Printf("add Value: %#v\n", values)
 					buf, _ := json.MarshalIndent(req, "", "  ")
 					body = string(buf)
 				}
@@ -1496,7 +1496,7 @@ func (feature *Feature) RemoveCustomFieldValue(name, value string) error {
 					}
 					// Not in there so just return
 					if !found {
-						fmt.Printf("  Not there - 1\n")
+						log.Printf("  Not there - 1\n")
 						return nil
 					}
 
@@ -1542,13 +1542,13 @@ func (feature *Feature) RemoveCustomFieldValue(name, value string) error {
 							if cf.Value != nil {
 								vals, ok := cf.Value.([]interface{})
 								if !ok {
-									fmt.Printf("cf: %#v\n", cf)
+									log.Printf("cf: %#v\n", cf)
 									return fmt.Errorf("Can't convert '%#v') to []interface{}string", cf.Value)
 								}
 								for _, val := range vals {
 									v, ok := val.(string)
 									if !ok {
-										fmt.Printf("v: %#v\n", v)
+										log.Printf("v: %#v\n", v)
 										return fmt.Errorf("Can't convert '%#v') to string", v)
 									}
 									if v == value {
@@ -1565,8 +1565,8 @@ func (feature *Feature) RemoveCustomFieldValue(name, value string) error {
 
 					// Not in there so just return
 					if !found {
-						fmt.Printf("feature: %s\n", SprintfJSON(feature))
-						fmt.Printf("  Not there - 2\n")
+						log.Printf("feature: %s\n", SprintfJSON(feature))
+						log.Printf("  Not there - 2\n")
 						return nil
 					}
 
@@ -1583,7 +1583,7 @@ func (feature *Feature) RemoveCustomFieldValue(name, value string) error {
 					}{}
 					req.Feature.Custom_Fields = map[string][]string{}
 					req.Feature.Custom_Fields[key] = values
-					fmt.Printf("Value: %#v\n", values)
+					log.Printf("Value: %#v\n", values)
 					buf, _ := json.MarshalIndent(req, "", "  ")
 					body = string(buf)
 				}
