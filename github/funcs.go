@@ -994,6 +994,9 @@ func (issue *Issue) GetProjectCards(name string) ([]*Card, error) {
 	if err != nil {
 		return nil, err
 	}
+	if proj == nil {
+		return nil, nil
+	}
 	cols, err := proj.GetColumns()
 	if err != nil {
 		return nil, err
@@ -1022,9 +1025,15 @@ func (issue *Issue) AddToProject(name string) error {
 	if err != nil {
 		return err
 	}
+	if proj == nil {
+		return fmt.Errorf("Can't find Project %q", name)
+	}
 	col, err := proj.GetColumn("Under Review")
 	if err != nil {
 		return err
+	}
+	if col == nil {
+		return fmt.Errorf("Can't find Column 'Under Review'")
 	}
 
 	data := fmt.Sprintf(`{"note":null,"content_id":%d,"content_type":"Issue"}`,
@@ -1063,7 +1072,9 @@ func (issue *Issue) RemoveFromProject(name string) error {
 	}
 
 	for _, card := range cards {
-		card.Delete()
+		if err = card.Delete(); err != nil {
+			return err
+		}
 	}
 
 	return nil
