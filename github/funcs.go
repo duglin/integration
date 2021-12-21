@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"reflect"
 	"sort"
@@ -172,7 +173,6 @@ type GitResponse struct {
 }
 
 func (gh *GitHubClient) Git(method string, url string, body string) (*GitResponse, error) {
-
 	if gh.Token == "" {
 		return nil, fmt.Errorf("Missing GitHub Token, perhaps .gitToken is missing?")
 	}
@@ -196,7 +196,7 @@ func (gh *GitHubClient) Git(method string, url string, body string) (*GitRespons
 	}
 	req, err := http.NewRequest(method, url, bytes.NewReader(buf))
 	if err != nil {
-		fmt.Printf("Git: %s %s\n", method, url)
+		log.Printf("Git: %s %s", method, url)
 		return nil, err
 	}
 
@@ -303,7 +303,7 @@ func (gh *GitHubClient) GraphQL(cmd string) (map[string]interface{}, error) {
 
 	req, err := http.NewRequest("POST", url, bytes.NewReader(buf))
 	if err != nil {
-		fmt.Printf("GitQL: %s\n", url)
+		log.Printf("GitQL: %s", url)
 		return nil, err
 	}
 
@@ -518,7 +518,7 @@ func (org *Organization) IsTeamMember(user string, team string) (bool, error) {
 		org.ID, daTeam.ID, user)
 	res, err = org.Git("GET", loc, "")
 	if err != nil {
-		fmt.Printf("Err: %s\n", err)
+		log.Printf("Err: %s", err)
 		if res != nil && res.StatusCode == 404 {
 			return false, nil
 		}
