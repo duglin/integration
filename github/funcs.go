@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -314,6 +315,7 @@ func (gh *GitHubClient) GraphQL(cmd string) (map[string]interface{}, error) {
 	if strings.Contains(url, "projects") || strings.Contains(url, "cards") ||
 		strings.Contains(url, "columns") {
 		req.Header.Add("Accept", "application/vnd.github.inertia-preview+json")
+		req.Header.Add("Accept", "application/vnd.github.v3+json")
 	}
 
 	tr := &http.Transport{
@@ -1085,6 +1087,38 @@ func (card *Card) Delete() error {
 	return err
 }
 
+func (card *Card) GetIssue() (*Issue, error) {
+	// .../api/v3/repos/ORG/REPO/NUM
+	str := "/api/v3/repos/"
+	i := strings.Index(card.Content_URL, str)
+	if i < 0 {
+		return nil, fmt.Errorf("Can't find %q in Card URL", str)
+	}
+	i += len(str)
+	parts := strings.SplitN(card.Content_URL[i:], "/", 4) // ORG/REPO/issues/#
+	num, err := strconv.Atoi(parts[3])
+	if err != nil {
+		return nil, fmt.Errorf("Can't parse issue number %q: %s", parts[3], err)
+	}
+	return card.GetIssueParts(parts[0], parts[1], num)
+}
+
+func (card *Card) MoveToTop() error {
+	_, err := card.Git("POST", card.URL+"/moves", `{"position": "top"}`)
+	return err
+}
+
+func (card *Card) MoveToBottom() error {
+	_, err := card.Git("POST", card.URL+"/moves", `{"position": "bottom"}`)
+	return err
+}
+
+func (card *Card) MoveAfter(otherCard *Card) error {
+	_, err := card.Git("POST", card.URL+"/moves",
+		fmt.Sprintf(`{"position": "after:%d"}`, otherCard.ID))
+	return err
+}
+
 func (issue *Issue) MoveToRepository(repoName string) error {
 	oldRepo, err := issue.GetRepository()
 	if err != nil {
@@ -1148,6 +1182,23 @@ func (project *Project) GetColumn(name string) (*Column, error) {
 	}
 
 	return nil, nil
+}
+
+func (gh *GitHubClient) GetCard(id int) (*Card, error) {
+	url := fmt.Sprintf("/projects/columns/cards/%d", id)
+
+	res, err := gh.Git("GET", url, "")
+	if err != nil {
+		return nil, err
+	}
+
+	card := Card{}
+	if err = json.Unmarshal(res.Body, &card); err != nil {
+		return nil, err
+	}
+	card.SetGH(gh)
+
+	return &card, nil
 }
 
 func (project *Project) GetCards() ([]*Card, error) {
