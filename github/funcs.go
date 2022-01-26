@@ -367,7 +367,12 @@ func Body(str string) string {
 }
 
 func (issue *Issue) SetTitle(title string) error {
-	_, err := issue.Git("POST", issue.URL, `{"title": [ "`+title+`"]}`)
+	buf, err := json.Marshal(title)
+	if err != nil {
+		return err
+	}
+	title = string(buf)
+	_, err := issue.Git("POST", issue.URL, `{"title": [ `+title+`]}`)
 	return err
 }
 
