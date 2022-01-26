@@ -372,7 +372,7 @@ func (issue *Issue) SetTitle(title string) error {
 		return err
 	}
 	title = string(buf)
-	_, err = issue.Git("POST", issue.URL, `{"title": [ `+title+`]}`)
+	_, err = issue.Git("POST", issue.URL, `{"title": `+title+`}`)
 	return err
 }
 
