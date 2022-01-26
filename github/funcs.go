@@ -366,6 +366,11 @@ func Body(str string) string {
 	return string(buf)
 }
 
+func (issue *Issue) SetTitle(title string) error {
+	_, err := issue.Git("POST", issue.URL, `{"title": [ "`+title+`"]}`)
+	return err
+}
+
 func (issue *Issue) AddLabel(label string) error {
 	_, err := issue.Git("POST", issue.URL+"/labels", `{"labels": [ "`+label+`"]}`)
 	return err
