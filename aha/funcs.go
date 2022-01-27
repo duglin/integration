@@ -642,6 +642,7 @@ func (feature *Feature) CustomField(name, action, value string) (string, error) 
 		}
 
 		for _, cfd := range sd.Custom_Field_Definitions {
+			// log.Printf("CFD: %q %#v", cfd.Name, cfd)
 			// Allow Name to be the real name or the key
 			if cfd.Name != name && cfd.Key != name {
 				continue
@@ -1089,8 +1090,74 @@ func (feature *Feature) CustomField(name, action, value string) (string, error) 
 					body = fmt.Sprintf(body, key, value)
 				}
 				//break
+			} else if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::TextField") {
+				// EXAMPLE: Value Statement - Epic
+				log.Printf("Type: %s", cfd.API_Type)
+				if cfd.API_Type == "string" {
+					found := false
+					for _, cf := range feature.Custom_Fields {
+						if cf.Key == key {
+							found = true
+							val := ""
+							if cf.Value != nil {
+								val = strings.TrimSpace(cf.Value.(string))
+							}
+
+							if action == "GET" {
+								return val, nil
+							}
+
+							if action == "COMPARE" {
+								if val == value {
+									return "true", nil
+								}
+								return "false", nil
+							}
+
+							if action == "SET" && val == value {
+								return "", nil
+							}
+
+							if action == "REMOVE" {
+								if value == "" {
+									if val == "" {
+										return "", nil
+									}
+								} else {
+									if val != value {
+										return "", nil
+									}
+									value = ""
+								}
+							}
+						}
+					}
+
+					if !found {
+						if action == "GET" {
+							return "", nil
+						}
+						if action == "COMPARE" {
+							if value == "" {
+								return "true", nil
+							} else {
+								return "false", nil
+							}
+						}
+						if action == "SET" && value == "" {
+							return "", nil
+						}
+						if action == "REMOVE" {
+							return "", nil
+						}
+					}
+
+					body = `{"feature":{"custom_fields":{"%s":"%s"}}}`
+					body = fmt.Sprintf(body, key, value)
+				}
+				//break
 			} else {
-				// fmt.Printf("unsupported type: %s / %s\n", cfd.Type, cfd.API_Type)
+				fmt.Printf("unsupported type: %s / %s\n", cfd.Type, cfd.API_Type)
 				continue
 			}
 			break // We did something, so break
