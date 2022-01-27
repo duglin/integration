@@ -1092,7 +1092,7 @@ func (feature *Feature) CustomField(name, action, value string) (string, error) 
 				//break
 			} else if strings.HasPrefix(cfd.Type, "CustomFieldDefinitions::TextField") {
 				// EXAMPLE: Value Statement - Epic
-				log.Printf("Type: %s", cfd.API_Type)
+				// log.Printf("Type: %s", cfd.API_Type)
 				if cfd.API_Type == "string" {
 					found := false
 					for _, cf := range feature.Custom_Fields {
